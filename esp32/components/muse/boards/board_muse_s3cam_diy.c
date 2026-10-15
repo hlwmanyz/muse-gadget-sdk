@@ -47,7 +47,7 @@ static const char *TAG = "board";
 
 /* ST7789 1.54" 240x240, SPI. */
 #define LCD_RES 240
-#define LCD_HOST SPI2_HOST
+#define LCD_HOST SPI3_HOST
 #define LCD_SCLK GPIO_NUM_19
 #define LCD_MOSI GPIO_NUM_20
 #define LCD_CS GPIO_NUM_45
@@ -103,7 +103,7 @@ static lv_display_t *display_start(lv_indev_t **touch)
         .miso_io_num = GPIO_NUM_NC,
         .quadwp_io_num = GPIO_NUM_NC,
         .quadhd_io_num = GPIO_NUM_NC,
-        .max_transfer_sz = LCD_RES * DRAW_BUF_LINES * 2,
+        .max_transfer_sz = LCD_RES * LCD_RES * 2,
     };
     if (spi_bus_initialize(LCD_HOST, &bus, SPI_DMA_CH_AUTO) != ESP_OK) {
         return NULL;
