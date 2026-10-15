@@ -1,1 +1,306 @@
-LyoKICogQ29weXJpZ2h0IChjKSBNZXRhIFBsYXRmb3JtcywgSW5jLiBhbmQgYWZmaWxpYXRlcy4KICoKICogTGljZW5zZWQgdW5kZXIgdGhlIEFwYWNoZSBMaWNlbnNlLCBWZXJzaW9uIDIuMCAodGhlICJMaWNlbnNlIik7CiAqIHlvdSBtYXkgbm90IHVzZSB0aGlzIGZpbGUgZXhjZXB0IGluIGNvbXBsaWFuY2Ugd2l0aCB0aGUgTGljZW5zZS4KICogWW91IG1heSBvYnRhaW4gYSBjb3B5IG9mIHRoZSBMaWNlbnNlIGF0CiAqCiAqICAgICBodHRwOi8vd3d3LmFwYWNoZS5vcmcvbGljZW5zZXMvTElDRU5TRS0yLjAKICoKICogVW5sZXNzIHJlcXVpcmVkIGJ5IGFwcGxpY2FibGUgbGF3IG9yIGFncmVlZCB0byBpbiB3cml0aW5nLCBzb2Z0d2FyZQogKiBkaXN0cmlidXRlZCB1bmRlciB0aGUgTGljZW5zZSBpcyBkaXN0cmlidXRlZCBvbiBhbiAiQVMgSVMiIEJBU0lTLAogKiBXSVRIT1VUIFdBUlJBTlRJRVMgT1IgQ09ORElUSU9OUyBPRiBBTlkgS0lORCwgZWl0aGVyIGV4cHJlc3Mgb3IgaW1wbGllZC4KICogU2VlIHRoZSBMaWNlbnNlIGZvciB0aGUgc3BlY2lmaWMgbGFuZ3VhZ2UgZ292ZXJuaW5nIHBlcm1pc3Npb25zIGFuZAogKiBsaW1pdGF0aW9ucyB1bmRlciB0aGUgTGljZW5zZS4KICovCgovKgogKiBESVkgRVNQMzItUzMgTjE2UjggQ0FNIGJvYXJkIChlLmcuIEdPT1VVVSBFU1AzMi1TMy1DQU06IDE2IE1CIGZsYXNoLCA4IE1CCiAqIG9jdGFsIFBTUkFNKSB3aXRoIGEgMS41NCIgMjQweDI0MCBTVDc3ODkgU1BJIExDRCwgYW4gSU5NUDQ0MSBJMlMgbWljcm9waG9uZQogKiBhbmQgYSBNQVg5ODM1N0EgSTJTIGFtcGxpZmllci4gV2lyaW5nIGZvbGxvd3MgdGhlIHhpYW96aGkgYnJlYWRib2FyZAogKiB0dXRvcmlhbCdzIHRhYmxlIChJTk1QNDQxL01BWDk4MzU3QS9TVDc3ODkgbW9kdWxlcyBvbiBhIGJyZWFkYm9hcmQpLgogKgogKiBUaGUgTENEIHNpdHMgb24gR1BJTzE5LzIwLCB0aGUgY2hpcCdzIG5hdGl2ZSBVU0IgcGlucywgc28gdGhlIGNvbnNvbGUgYW5kCiAqIGZsYXNoaW5nIGdvIHRocm91Z2ggdGhlIGJvYXJkJ3MgQ0gzNDAgVFRMIHBvcnQgKFVBUlQwKTsgc2VlCiAqIENPTkZJR19NVVNFX0NPTlNPTEVfVUFSVCBpbiBkZXZpY2VzL3Nka2NvbmZpZy5tdXNlLXMzY2FtLWRpeS4gVGhlIEJPT1QKICogYnV0dG9uIChHUElPMCkgaXMgcHVzaC10by10YWxrLiBUaGUgT1YyNjQwIGNhbWVyYSBpcyBub3QgdXNlZC4KICovCiNpbmNsdWRlICJkcml2ZXIvaTJzX3N0ZC5oIgojaW5jbHVkZSAiZHJpdmVyL2xlZGMuaCIKI2luY2x1ZGUgImRyaXZlci9zcGlfbWFzdGVyLmgiCiNpbmNsdWRlICJlc3BfY2hlY2suaCIKI2luY2x1ZGUgImVzcF9jb2RlY19kZXZfZGVmYXVsdHMuaCIKI2luY2x1ZGUgImVzcF9sY2RfcGFuZWxfaW8uaCIKI2luY2x1ZGUgImVzcF9sY2RfcGFuZWxfb3BzLmgiCiNpbmNsdWRlICJlc3BfbGNkX3BhbmVsX3ZlbmRvci5oIgojaW5jbHVkZSAiZXNwX2xvZy5oIgojaW5jbHVkZSAiZXNwX2x2X2FkYXB0ZXIuaCIKI2luY2x1ZGUgImVzcF9zbGVlcC5oIgojaW5jbHVkZSAiZnJlZXJ0b3MvRnJlZVJUT1MuaCIKI2luY2x1ZGUgImZyZWVydG9zL3Rhc2suaCIKCiNpbmNsdWRlICJtdXNlX2F1ZGlvLmgiCiNpbmNsdWRlICJtdXNlX2JvYXJkLmgiCiNpbmNsdWRlICJtdXNlX21lbS5oIgoKc3RhdGljIGNvbnN0IGNoYXIgKlRBRyA9ICJib2FyZCI7CgovKiBTVDc3ODkgMS41NCIgMjQweDI0MCwgU1BJLiAqLwojZGVmaW5lIExDRF9SRVMgMjQwCiNkZWZpbmUgTENEX0hPU1QgU1BJMl9IT1NUCiNkZWZpbmUgTENEX1NDTEsgR1BJT19OVU1fMTkKI2RlZmluZSBMQ0RfTU9TSSBHUElPX05VTV8yMAojZGVmaW5lIExDRF9DUyBHUElPX05VTV80NQojZGVmaW5lIExDRF9EQyBHUElPX05VTV80NwojZGVmaW5lIExDRF9SU1QgR1BJT19OVU1fMjEKI2RlZmluZSBMQ0RfQkwgR1BJT19OVU1fMzgKI2RlZmluZSBEUkFXX0JVRl9MSU5FUyA0MAoKLyogSU5NUDQ0MSBJMlMgbWljcm9waG9uZSAoTC9SIHN0cmFwcGVkIHRvIEdORDogbGVmdCBzbG90KS4gKi8KI2RlZmluZSBNSUNfV1MgR1BJT19OVU1fMQojZGVmaW5lIE1JQ19TQ0sgR1BJT19OVU1fMgojZGVmaW5lIE1JQ19TRCBHUElPX05VTV80MgoKLyogTUFYOTgzNTdBIEkyUyBhbXBsaWZpZXIgKFNEIHN0cmFwcGVkIGhpZ2g6IGFsd2F5cyBvbikuICovCiNkZWZpbmUgU1BLX0JDTEsgR1BJT19OVU1fNDAKI2RlZmluZSBTUEtfV1MgR1BJT19OVU1fNDEKI2RlZmluZSBTUEtfRE9VVCBHUElPX05VTV8zOQoKI2RlZmluZSBUQUxLX0dQSU8gR1BJT19OVU1fMCAgICAgIC8qIEJPT1QgYnV0dG9uICovCgpzdGF0aWMgZXNwX2xjZF9wYW5lbF9oYW5kbGVfdCBzX3BhbmVsOwpzdGF0aWMgbXVzZV9ncGlvX2J1dHRvbl90IHNfdGFsazsKCnN0YXRpYyBlc3BfZXJyX3QgaW5pdCh2b2lkKQp7CiAgICByZXR1cm4gbXVzZV9ncGlvX2J1dHRvbl9pbml0KCZzX3RhbGssIFRBTEtfR1BJTyk7Cn0KCnN0YXRpYyBsdl9kaXNwbGF5X3QgKmRpc3BsYXlfc3RhcnQobHZfaW5kZXZfdCAqKnRvdWNoKQp7CiAgICAodm9pZCl0b3VjaDsKICAgIGNvbnN0IGxlZGNfdGltZXJfY29uZmlnX3QgYmxfdGltZXIgPSB7CiAgICAgICAgLnNwZWVkX21vZGUgPSBMRURDX0xPV19TUEVFRF9NT0RFLAogICAgICAgIC5kdXR5X3Jlc29sdXRpb24gPSBMRURDX1RJTUVSXzEwX0JJVCwKICAgICAgICAudGltZXJfbnVtID0gTEVEQ19USU1FUl8wLAogICAgICAgIC5mcmVxX2h6ID0gMjAwMDAsCiAgICAgICAgLmNsa19jZmcgPSBMRURDX0FVVE9fQ0xLLAogICAgfTsKICAgIGNvbnN0IGxlZGNfY2hhbm5lbF9jb25maWdfdCBibF9jaCA9IHsKICAgICAgICAuZ3Bpb19udW0gPSBMQ0RfQkwsCiAgICAgICAgLnNwZWVkX21vZGUgPSBMRURDX0xPV19TUEVFRF9NT0RFLAogICAgICAgIC5jaGFubmVsID0gTEVEQ19DSEFOTkVMXzAsCiAgICAgICAgLnRpbWVyX3NlbCA9IExFRENfVElNRVJfMCwKICAgICAgICAuZHV0eSA9IDAsCiAgICB9OwogICAgaWYgKGxlZGNfdGltZXJfY29uZmlnKCZibF90aW1lcikgIT0gRVNQX09LIHx8IGxlZGNfY2hhbm5lbF9jb25maWcoJmJsX2NoKSAhPSBFU1BfT0spIHsKICAgICAgICByZXR1cm4gTlVMTDsKICAgIH0KCiAgICBjb25zdCBzcGlfYnVzX2NvbmZpZ190IGJ1cyA9IHsKICAgICAgICAuc2Nsa19pb19udW0gPSBMQ0RfU0NMSywKICAgICAgICAubW9zaV9pb19udW0gPSBMQ0RfTU9TSSwKICAgICAgICAubWlzb19pb19udW0gPSBHUElPX05VTV9OQywKICAgICAgICAucXVhZHdwX2lvX251bSA9IEdQSU9fTlVNX05DLAogICAgICAgIC5xdWFkaGRfaW9fbnVtID0gR1BJT19OVU1fTkMsCiAgICAgICAgLm1heF90cmFuc2Zlcl9zeiA9IExDRF9SRVMgKiBEUkFXX0JVRl9MSU5FUyAqIDIsCiAgICB9OwogICAgaWYgKHNwaV9idXNfaW5pdGlhbGl6ZShMQ0RfSE9TVCwgJmJ1cywgU1BJX0RNQV9DSF9BVVRPKSAhPSBFU1BfT0spIHsKICAgICAgICByZXR1cm4gTlVMTDsKICAgIH0KICAgIGVzcF9sY2RfcGFuZWxfaW9faGFuZGxlX3QgaW87CiAgICBjb25zdCBlc3BfbGNkX3BhbmVsX2lvX3NwaV9jb25maWdfdCBpb19jZmcgPSB7CiAgICAgICAgLmNzX2dwaW9fbnVtID0gTENEX0NTLAogICAgICAgIC5kY19ncGlvX251bSA9IExDRF9EQywKICAgICAgICAuc3BpX21vZGUgPSAwLAogICAgICAgIC5wY2xrX2h6ID0gNDAgKiAxMDAwICogMTAwMCwKICAgICAgICAudHJhbnNfcXVldWVfZGVwdGggPSAxMCwKICAgICAgICAubGNkX2NtZF9iaXRzID0gOCwKICAgICAgICAubGNkX3BhcmFtX2JpdHMgPSA4LAogICAgfTsKICAgIGlmIChlc3BfbGNkX25ld19wYW5lbF9pb19zcGkoTENEX0hPU1QsICZpb19jZmcsICZpbykgIT0gRVNQX09LKSB7CiAgICAgICAgcmV0dXJuIE5VTEw7CiAgICB9CiAgICBjb25zdCBlc3BfbGNkX3BhbmVsX2Rldl9jb25maWdfdCBwYW5lbF9jZmcgPSB7CiAgICAgICAgLnJlc2V0X2dwaW9fbnVtID0gTENEX1JTVCwKICAgICAgICAucmdiX2VsZV9vcmRlciA9IExDRF9SR0JfRUxFTUVOVF9PUkRFUl9CR1IsCiAgICAgICAgLmJpdHNfcGVyX3BpeGVsID0gMTYsCiAgICB9OwogICAgaWYgKGVzcF9sY2RfbmV3X3BhbmVsX3N0Nzc4OShpbywgJnBhbmVsX2NmZywgJnNfcGFuZWwpICE9IEVTUF9PSykgewogICAgICAgIHJldHVybiBOVUxMOwogICAgfQogICAgZXNwX2xjZF9wYW5lbF9yZXNldChzX3BhbmVsKTsKICAgIGVzcF9sY2RfcGFuZWxfaW5pdChzX3BhbmVsKTsKICAgIGVzcF9sY2RfcGFuZWxfaW52ZXJ0X2NvbG9yKHNfcGFuZWwsIGZhbHNlKTsKICAgIGVzcF9sY2RfcGFuZWxfZGlzcF9vbl9vZmYoc19wYW5lbCwgdHJ1ZSk7CgogICAgZXNwX2x2X2FkYXB0ZXJfY29uZmlnX3QgYWRhcHRlcl9jZmcgPSBFU1BfTFZfQURBUFRFUl9ERUZBVUxUX0NPTkZJRygpOwogICAgYWRhcHRlcl9jZmcudGFza19jb3JlX2lkID0gTVVTRV9VSV9DT1JFOwogICAgYWRhcHRlcl9jZmcudGFza19wcmlvcml0eSA9IE1VU0VfVUlfUFJJT1JJVFk7CiAgICBpZiAoZXNwX2x2X2FkYXB0ZXJfaW5pdCgmYWRhcHRlcl9jZmcpICE9IEVTUF9PSykgewogICAgICAgIHJldHVybiBOVUxMOwogICAgfQogICAgY29uc3QgZXNwX2x2X2FkYXB0ZXJfZGlzcGxheV9jb25maWdfdCBkaXNwX2NmZyA9IHsKICAgICAgICAucGFuZWwgPSBzX3BhbmVsLAogICAgICAgIC5wYW5lbF9pbyA9IGlvLAogICAgICAgIC5wcm9maWxlID0gewogICAgICAgICAgICAuaW50ZXJmYWNlID0gRVNQX0xWX0FEQVBURVJfUEFORUxfSUZfT1RIRVIsCiAgICAgICAgICAgIC5yb3RhdGlvbiA9IEVTUF9MVl9BREFQVEVSX1JPVEFURV8wLAogICAgICAgICAgICAuaG9yX3JlcyA9IExDRF9SRVMsCiAgICAgICAgICAgIC52ZXJfcmVzID0gTENEX1JFUywKICAgICAgICAgICAgLmJ1ZmZlcl9oZWlnaHQgPSBEUkFXX0JVRl9MSU5FUywKICAgICAgICAgICAgLnVzZV9wc3JhbSA9IGZhbHNlLAogICAgICAgICAgICAucmVxdWlyZV9kb3VibGVfYnVmZmVyID0gdHJ1ZSwKICAgICAgICB9LAogICAgICAgIC50ZWFyX2F2b2lkX21vZGUgPSBFU1BfTFZfQURBUFRFUl9URUFSX0FWT0lEX01PREVfTk9ORSwKICAgIH07CiAgICBsdl9kaXNwbGF5X3QgKmRpc3AgPSBlc3BfbHZfYWRhcHRlcl9yZWdpc3Rlcl9kaXNwbGF5KCZkaXNwX2NmZyk7CiAgICBpZiAoIWRpc3AgfHwgZXNwX2x2X2FkYXB0ZXJfc3RhcnQoKSAhPSBFU1BfT0spIHsKICAgICAgICByZXR1cm4gTlVMTDsKICAgIH0KICAgIHJldHVybiBkaXNwOwp9CgpzdGF0aWMgYm9vbCBkaXNwbGF5X2xvY2soaW50IHRpbWVvdXRfbXMpCnsKICAgIHJldHVybiBlc3BfbHZfYWRhcHRlcl9sb2NrKHRpbWVvdXRfbXMpID09IEVTUF9PSzsKfQoKc3RhdGljIHZvaWQgc2V0X2JyaWdodG5lc3MoaW50IHBjdCkKewogICAgbGVkY19zZXRfZHV0eShMRURDX0xPV19TUEVFRF9NT0RFLCBMRURDX0NIQU5ORUxfMCwgcGN0ICogMTAyMyAvIDEwMCk7CiAgICBsZWRjX3VwZGF0ZV9kdXR5KExFRENfTE9XX1NQRUVEX01PREUsIExFRENfQ0hBTk5FTF8wKTsKfQoKc3RhdGljIHZvaWQgcGFuZWxfc2xlZXAoYm9vbCBzbGVlcCkKewogICAgZXNwX2xjZF9wYW5lbF9kaXNwX3NsZWVwKHNfcGFuZWwsIHNsZWVwKTsgICAvKiBTTFBJTi9TTFBPVVQ7IEdSQU0gaXMga2VwdCAqLwp9CgpzdGF0aWMgdm9pZCBkaXNwbGF5X3BhdXNlKGJvb2wgcGF1c2UpCnsKICAgIGlmIChwYXVzZSkgewogICAgICAgIGVzcF9sdl9hZGFwdGVyX3BhdXNlKC0xKTsKICAgIH0gZWxzZSB7CiAgICAgICAgZXNwX2x2X2FkYXB0ZXJfcmVzdW1lKCk7CiAgICB9Cn0KCi8qCiAqIElOTVA0NDEgb24gSTJTMCAoUlggb25seSkgYW5kIE1BWDk4MzU3QSBvbiBJMlMxIChUWCBvbmx5KS4gTmVpdGhlciBjaGlwIGhhcwogKiBhIGNvbnRyb2wgaW50ZXJmYWNlLCBzbyBjb2RlY19pZiBpcyBOVUxMIGFuZCBlc3BfY29kZWNfZGV2IGFwcGxpZXMgaXRzCiAqIHNvZnR3YXJlIHZvbHVtZSB0byB0aGUgc3BlYWtlcjsgdGhlIG1pYyBnYWluIHN0YXlzIGZpeGVkLgogKi8Kc3RhdGljIGVzcF9lcnJfdCBhdWRpb19pbml0KGVzcF9jb2RlY19kZXZfaGFuZGxlX3QgKnNwaywgZXNwX2NvZGVjX2Rldl9oYW5kbGVfdCAqbWljKQp7CiAgICBpMnNfY2hhbl9oYW5kbGVfdCBtaWNfcngsIHNwa190eDsKCiAgICBpMnNfY2hhbl9jb25maWdfdCBtaWNfY2hhbl9jZmcgPSBJMlNfQ0hBTk5FTF9ERUZBVUxUX0NPTkZJRyhJMlNfTlVNXzAsIEkyU19ST0xFX01BU1RFUik7CiAgICBFU1BfUkVUVVJOX09OX0VSUk9SKGkyc19uZXdfY2hhbm5lbCgmbWljX2NoYW5fY2ZnLCBOVUxMLCAmbWljX3J4KSwgVEFHLCAibWljIGkycyBjaGFubmVsIik7CiAgICBjb25zdCBpMnNfc3RkX2NvbmZpZ190IG1pY19jZmcgPSB7CiAgICAgICAgLmNsa19jZmcgPSBJMlNfU1REX0NMS19ERUZBVUxUX0NPTkZJRyhNVVNFX0FVRElPX1JBVEUpLAogICAgICAgIC5zbG90X2NmZyA9IEkyU19TVERfUEhJTElQU19TTE9UX0RFRkFVTFRfQ09ORklHKEkyU19EQVRBX0JJVF9XSURUSF8xNkJJVCwgSTJTX1NMT1RfTU9ERV9TVEVSRU8pLAogICAgICAgIC5ncGlvX2NmZyA9IHsKICAgICAgICAgICAgLm1jbGsgPSBHUElPX05VTV9OQywKICAgICAgICAgICAgLmJjbGsgPSBNSUNfU0NLLAogICAgICAgICAgICAud3MgPSBNSUNfV1MsCiAgICAgICAgICAgIC5kb3V0ID0gR1BJT19OVU1fTkMsCiAgICAgICAgICAgIC5kaW4gPSBNSUNfU0QsCiAgICAgICAgfSwKICAgIH07CiAgICBFU1BfUkVUVVJOX09OX0VSUk9SKGkyc19jaGFubmVsX2luaXRfc3RkX21vZGUobWljX3J4LCAmbWljX2NmZyksIFRBRywgIm1pYyBpMnMiKTsKICAgIEVTUF9SRVRVUk5fT05fRVJST1IoaTJzX2NoYW5uZWxfZW5hYmxlKG1pY19yeCksIFRBRywgIm1pYyBpMnMgb24iKTsKCiAgICBpMnNfY2hhbl9jb25maWdfdCBzcGtfY2hhbl9jZmcgPSBJMlNfQ0hBTk5FTF9ERUZBVUxUX0NPTkZJRyhJMlNfTlVNXzEsIEkyU19ST0xFX01BU1RFUik7CiAgICBzcGtfY2hhbl9jZmcuYXV0b19jbGVhciA9IHRydWU7CiAgICBFU1BfUkVUVVJOX09OX0VSUk9SKGkyc19uZXdfY2hhbm5lbCgmc3BrX2NoYW5fY2ZnLCAmc3BrX3R4LCBOVUxMKSwgVEFHLCAic3BrIGkycyBjaGFubmVsIik7CiAgICBjb25zdCBpMnNfc3RkX2NvbmZpZ190IHNwa19jZmcgPSB7CiAgICAgICAgLmNsa19jZmcgPSBJMlNfU1REX0NMS19ERUZBVUxUX0NPTkZJRyhNVVNFX0FVRElPX1JBVEUpLAogICAgICAgIC5zbG90X2NmZyA9IEkyU19TVERfUEhJTElQU19TTE9UX0RFRkFVTFRfQ09ORklHKEkyU19EQVRBX0JJVF9XSURUSF8xNkJJVCwgSTJTX1NMT1RfTU9ERV9TVEVSRU8pLAogICAgICAgIC5ncGlvX2NmZyA9IHsKICAgICAgICAgICAgLm1jbGsgPSBHUElPX05VTV9OQywKICAgICAgICAgICAgLmJjbGsgPSBTUEtfQkNMSywKICAgICAgICAgICAgLndzID0gU1BLX1dTLAogICAgICAgICAgICAuZG91dCA9IFNQS19ET1VULAogICAgICAgICAgICAuZGluID0gR1BJT19OVU1fTkMsCiAgICAgICAgfSwKICAgIH07CiAgICBFU1BfUkVUVVJOX09OX0VSUk9SKGkyc19jaGFubmVsX2luaXRfc3RkX21vZGUoc3BrX3R4LCAmc3BrX2NmZyksIFRBRywgInNwayBpMnMiKTsKICAgIEVTUF9SRVRVUk5fT05fRVJST1IoaTJzX2NoYW5uZWxfZW5hYmxlKHNwa190eCksIFRBRywgInNwayBpMnMgb24iKTsKCiAgICBhdWRpb19jb2RlY19pMnNfY2ZnX3QgbWljX2kycyA9IHsgLnBvcnQgPSBJMlNfTlVNXzAsIC5yeF9oYW5kbGUgPSBtaWNfcngsIC50eF9oYW5kbGUgPSBOVUxMIH07CiAgICBjb25zdCBhdWRpb19jb2RlY19kYXRhX2lmX3QgKm1pY19kYXRhID0gYXVkaW9fY29kZWNfbmV3X2kyc19kYXRhKCZtaWNfaTJzKTsKICAgIGF1ZGlvX2NvZGVjX2kyc19jZmdfdCBzcGtfaTJzID0geyAucG9ydCA9IEkyU19OVU1fMSwgLnJ4X2hhbmRsZSA9IE5VTEwsIC50eF9oYW5kbGUgPSBzcGtfdHggfTsKICAgIGNvbnN0IGF1ZGlvX2NvZGVjX2RhdGFfaWZfdCAqc3BrX2RhdGEgPSBhdWRpb19jb2RlY19uZXdfaTJzX2RhdGEoJnNwa19pMnMpOwogICAgRVNQX1JFVFVSTl9PTl9GQUxTRShtaWNfZGF0YSAmJiBzcGtfZGF0YSwgRVNQX0VSUl9OT19NRU0sIFRBRywgImkycyBkYXRhIGlmIik7CgogICAgZXNwX2NvZGVjX2Rldl9jZmdfdCBtaWNfZGV2X2NmZyA9IHsKICAgICAgICAuZGV2X3R5cGUgPSBFU1BfQ09ERUNfREVWX1RZUEVfSU4sIC5jb2RlY19pZiA9IE5VTEwsIC5kYXRhX2lmID0gbWljX2RhdGEsCiAgICB9OwogICAgZXNwX2NvZGVjX2Rldl9jZmdfdCBzcGtfZGV2X2NmZyA9IHsKICAgICAgICAuZGV2X3R5cGUgPSBFU1BfQ09ERUNfREVWX1RZUEVfT1VULCAuY29kZWNfaWYgPSBOVUxMLCAuZGF0YV9pZiA9IHNwa19kYXRhLAogICAgfTsKICAgICptaWMgPSBlc3BfY29kZWNfZGV2X25ldygmbWljX2Rldl9jZmcpOwogICAgKnNwayA9IGVzcF9jb2RlY19kZXZfbmV3KCZzcGtfZGV2X2NmZyk7CiAgICByZXR1cm4gKm1pYyAmJiAqc3BrID8gRVNQX09LIDogRVNQX0ZBSUw7Cn0KCnN0YXRpYyB1bnNpZ25lZCBwb2xsX2J1dHRvbnModm9pZCkKewogICAgcmV0dXJuIG11c2VfZ3Bpb19idXR0b25fcG9sbCgmc190YWxrKTsKfQoKc3RhdGljIHZvaWQgd2FpdF9idXR0b25zKGludCB0aW1lb3V0X21zKQp7CiAgICBtdXNlX2dwaW9fYnV0dG9uc193YWl0KChtdXNlX2dwaW9fYnV0dG9uX3QgKmNvbnN0W10peyAmc190YWxrIH0sIDEsIHRpbWVvdXRfbXMpOwp9CgovKiBVU0ItcG93ZXJlZCB0aHJvdWdoIHRoZSBUVEwgcG9ydDsgbm8gYmF0dGVyeS4gKi8Kc3RhdGljIGVzcF9lcnJfdCByZWFkX3Bvd2VyKG11c2VfcG93ZXJfdCAqb3V0KQp7CiAgICBvdXQtPmJhdHRlcnlfcGN0ID0gLTE7CiAgICBvdXQtPmJhdHRlcnlfbXYgPSAwOwogICAgb3V0LT5jaGFyZ2luZyA9IGZhbHNlOwogICAgb3V0LT51c2IgPSB0cnVlOwogICAgcmV0dXJuIEVTUF9PSzsKfQoKc3RhdGljIGVzcF9lcnJfdCBwb3dlcl9vZmYodm9pZCkKewogICAgc2V0X2JyaWdodG5lc3MoMCk7CiAgICBlc3BfbGNkX3BhbmVsX2Rpc3Bfb25fb2ZmKHNfcGFuZWwsIGZhbHNlKTsKICAgIGVzcF9zbGVlcF9lbmFibGVfZXh0MF93YWtldXAoVEFMS19HUElPLCAwKTsKICAgIGVzcF9kZWVwX3NsZWVwX3N0YXJ0KCk7CiAgICByZXR1cm4gRVNQX0ZBSUw7Cn0KCnN0YXRpYyBjb25zdCBtdXNlX2JvYXJkX3Qgc19ib2FyZCA9IHsKICAgIC5uYW1lID0gIkVTUDMyLVMzIE4xNlI4IENBTSBESVkgKFNUNzc4OSArIElOTVA0NDEgKyBNQVg5ODM1N0EpIiwKICAgIC53aWR0aCA9IExDRF9SRVMsCiAgICAuaGVpZ2h0ID0gTENEX1JFUywKICAgIC5yb3VuZCA9IGZhbHNlLAogICAgLnRvdWNoID0gZmFsc2UsCiAgICAudGFsa19idXR0b24gPSAiYm9vdCIsCiAgICAuYXV4X2J1dHRvbiA9IE5VTEwsCiAgICAudGFsa19oaW50ID0geyBMVl9BTElHTl9CT1RUT01fTUlELCAwLCAtOCB9LAogICAgLmZyYW1lX21zID0gNDAsCiAgICAuaW5pdCA9IGluaXQsCiAgICAuZGlzcGxheV9zdGFydCA9IGRpc3BsYXlfc3RhcnQsCiAgICAuZGlzcGxheV9sb2NrID0gZGlzcGxheV9sb2NrLAogICAgLmRpc3BsYXlfdW5sb2NrID0gZXNwX2x2X2FkYXB0ZXJfdW5sb2NrLAogICAgLnNldF9icmlnaHRuZXNzID0gc2V0X2JyaWdodG5lc3MsCiAgICAucGFuZWxfc2xlZXAgPSBwYW5lbF9zbGVlcCwKICAgIC5kaXNwbGF5X3BhdXNlID0gZGlzcGxheV9wYXVzZSwKICAgIC5hdWRpb19pbml0ID0gYXVkaW9faW5pdCwKICAgIC5taWNfc2xvdCA9IDAsICAgICAgICAgICAgICAvKiBvbmUgbWljLCBvbiB0aGUgbGVmdCBzbG90ICovCiAgICAucG9sbF9idXR0b25zID0gcG9sbF9idXR0b25zLAogICAgLndhaXRfYnV0dG9ucyA9IHdhaXRfYnV0dG9ucywKICAgIC5yZWFkX3Bvd2VyID0gcmVhZF9wb3dlciwKICAgIC5wb3dlcl9vZmYgPSBwb3dlcl9vZmYsCn07CgovKiBIb21lIExpbmsncyBhcHBfbWFpbiBzdGFydHMgTXVzZSB3aXRoIHRoaXMgYm9hcmQgKG1haW4vbWFpbi5jKS4gKi8KY29uc3QgbXVzZV9ib2FyZF90ICptdXNlX2JvYXJkX2dldCh2b2lkKQp7CiAgICByZXR1cm4gJnNfYm9hcmQ7Cn0K
+/*
+ * Copyright (c) Meta Platforms, Inc. and affiliates.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+/*
+ * DIY ESP32-S3 N16R8 CAM board (e.g. GOOUUU ESP32-S3-CAM: 16 MB flash, 8 MB
+ * octal PSRAM) with a 1.54" 240x240 ST7789 SPI LCD, an INMP441 I2S microphone
+ * and a MAX98357A I2S amplifier. Wiring follows the xiaozhi breadboard
+ * tutorial's table (INMP441/MAX98357A/ST7789 modules on a breadboard).
+ *
+ * The LCD sits on GPIO19/20, the chip's native USB pins, so the console and
+ * flashing go through the board's CH340 TTL port (UART0); see
+ * CONFIG_MUSE_CONSOLE_UART in devices/sdkconfig.muse-s3cam-diy. The BOOT
+ * button (GPIO0) is push-to-talk. The OV2640 camera is not used.
+ */
+#include "driver/i2s_std.h"
+#include "driver/ledc.h"
+#include "driver/spi_master.h"
+#include "esp_check.h"
+#include "esp_codec_dev_defaults.h"
+#include "esp_lcd_panel_io.h"
+#include "esp_lcd_panel_ops.h"
+#include "esp_lcd_panel_vendor.h"
+#include "esp_log.h"
+#include "esp_lv_adapter.h"
+#include "esp_sleep.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
+
+#include "muse_audio.h"
+#include "muse_board.h"
+#include "muse_mem.h"
+
+static const char *TAG = "board";
+
+/* ST7789 1.54" 240x240, SPI. */
+#define LCD_RES 240
+#define LCD_HOST SPI2_HOST
+#define LCD_SCLK GPIO_NUM_19
+#define LCD_MOSI GPIO_NUM_20
+#define LCD_CS GPIO_NUM_45
+#define LCD_DC GPIO_NUM_47
+#define LCD_RST GPIO_NUM_21
+#define LCD_BL GPIO_NUM_38
+#define DRAW_BUF_LINES 40
+
+/* INMP441 I2S microphone (L/R strapped to GND: left slot). */
+#define MIC_WS GPIO_NUM_1
+#define MIC_SCK GPIO_NUM_2
+#define MIC_SD GPIO_NUM_42
+
+/* MAX98357A I2S amplifier (SD strapped high: always on). */
+#define SPK_BCLK GPIO_NUM_40
+#define SPK_WS GPIO_NUM_41
+#define SPK_DOUT GPIO_NUM_39
+
+#define TALK_GPIO GPIO_NUM_0      /* BOOT button */
+
+static esp_lcd_panel_handle_t s_panel;
+static muse_gpio_button_t s_talk;
+
+static esp_err_t init(void)
+{
+    return muse_gpio_button_init(&s_talk, TALK_GPIO);
+}
+
+static lv_display_t *display_start(lv_indev_t **touch)
+{
+    (void)touch;
+    const ledc_timer_config_t bl_timer = {
+        .speed_mode = LEDC_LOW_SPEED_MODE,
+        .duty_resolution = LEDC_TIMER_10_BIT,
+        .timer_num = LEDC_TIMER_0,
+        .freq_hz = 20000,
+        .clk_cfg = LEDC_AUTO_CLK,
+    };
+    const ledc_channel_config_t bl_ch = {
+        .gpio_num = LCD_BL,
+        .speed_mode = LEDC_LOW_SPEED_MODE,
+        .channel = LEDC_CHANNEL_0,
+        .timer_sel = LEDC_TIMER_0,
+        .duty = 0,
+    };
+    if (ledc_timer_config(&bl_timer) != ESP_OK || ledc_channel_config(&bl_ch) != ESP_OK) {
+        return NULL;
+    }
+
+    const spi_bus_config_t bus = {
+        .sclk_io_num = LCD_SCLK,
+        .mosi_io_num = LCD_MOSI,
+        .miso_io_num = GPIO_NUM_NC,
+        .quadwp_io_num = GPIO_NUM_NC,
+        .quadhd_io_num = GPIO_NUM_NC,
+        .max_transfer_sz = LCD_RES * DRAW_BUF_LINES * 2,
+    };
+    if (spi_bus_initialize(LCD_HOST, &bus, SPI_DMA_CH_AUTO) != ESP_OK) {
+        return NULL;
+    }
+    esp_lcd_panel_io_handle_t io;
+    const esp_lcd_panel_io_spi_config_t io_cfg = {
+        .cs_gpio_num = LCD_CS,
+        .dc_gpio_num = LCD_DC,
+        .spi_mode = 0,
+        .pclk_hz = 40 * 1000 * 1000,
+        .trans_queue_depth = 10,
+        .lcd_cmd_bits = 8,
+        .lcd_param_bits = 8,
+    };
+    if (esp_lcd_new_panel_io_spi(LCD_HOST, &io_cfg, &io) != ESP_OK) {
+        return NULL;
+    }
+    const esp_lcd_panel_dev_config_t panel_cfg = {
+        .reset_gpio_num = LCD_RST,
+        .rgb_ele_order = LCD_RGB_ELEMENT_ORDER_BGR,
+        .bits_per_pixel = 16,
+    };
+    if (esp_lcd_new_panel_st7789(io, &panel_cfg, &s_panel) != ESP_OK) {
+        return NULL;
+    }
+    esp_lcd_panel_reset(s_panel);
+    esp_lcd_panel_init(s_panel);
+    esp_lcd_panel_invert_color(s_panel, false);
+    esp_lcd_panel_disp_on_off(s_panel, true);
+
+    esp_lv_adapter_config_t adapter_cfg = ESP_LV_ADAPTER_DEFAULT_CONFIG();
+    adapter_cfg.task_core_id = MUSE_UI_CORE;
+    adapter_cfg.task_priority = MUSE_UI_PRIORITY;
+    if (esp_lv_adapter_init(&adapter_cfg) != ESP_OK) {
+        return NULL;
+    }
+    const esp_lv_adapter_display_config_t disp_cfg = {
+        .panel = s_panel,
+        .panel_io = io,
+        .profile = {
+            .interface = ESP_LV_ADAPTER_PANEL_IF_OTHER,
+            .rotation = ESP_LV_ADAPTER_ROTATE_0,
+            .hor_res = LCD_RES,
+            .ver_res = LCD_RES,
+            .buffer_height = DRAW_BUF_LINES,
+            .use_psram = false,
+            .require_double_buffer = true,
+        },
+        .tear_avoid_mode = ESP_LV_ADAPTER_TEAR_AVOID_MODE_NONE,
+    };
+    lv_display_t *disp = esp_lv_adapter_register_display(&disp_cfg);
+    if (!disp || esp_lv_adapter_start() != ESP_OK) {
+        return NULL;
+    }
+    return disp;
+}
+
+static bool display_lock(int timeout_ms)
+{
+    return esp_lv_adapter_lock(timeout_ms) == ESP_OK;
+}
+
+static void set_brightness(int pct)
+{
+    ledc_set_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0, pct * 1023 / 100);
+    ledc_update_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0);
+}
+
+static void panel_sleep(bool sleep)
+{
+    esp_lcd_panel_disp_sleep(s_panel, sleep);   /* SLPIN/SLPOUT; GRAM is kept */
+}
+
+static void display_pause(bool pause)
+{
+    if (pause) {
+        esp_lv_adapter_pause(-1);
+    } else {
+        esp_lv_adapter_resume();
+    }
+}
+
+/*
+ * INMP441 on I2S0 (RX only) and MAX98357A on I2S1 (TX only). Neither chip has
+ * a control interface, so codec_if is NULL and esp_codec_dev applies its
+ * software volume to the speaker; the mic gain stays fixed.
+ */
+static esp_err_t audio_init(esp_codec_dev_handle_t *spk, esp_codec_dev_handle_t *mic)
+{
+    i2s_chan_handle_t mic_rx, spk_tx;
+
+    i2s_chan_config_t mic_chan_cfg = I2S_CHANNEL_DEFAULT_CONFIG(I2S_NUM_0, I2S_ROLE_MASTER);
+    ESP_RETURN_ON_ERROR(i2s_new_channel(&mic_chan_cfg, NULL, &mic_rx), TAG, "mic i2s channel");
+    const i2s_std_config_t mic_cfg = {
+        .clk_cfg = I2S_STD_CLK_DEFAULT_CONFIG(MUSE_AUDIO_RATE),
+        .slot_cfg = I2S_STD_PHILIPS_SLOT_DEFAULT_CONFIG(I2S_DATA_BIT_WIDTH_16BIT, I2S_SLOT_MODE_STEREO),
+        .gpio_cfg = {
+            .mclk = GPIO_NUM_NC,
+            .bclk = MIC_SCK,
+            .ws = MIC_WS,
+            .dout = GPIO_NUM_NC,
+            .din = MIC_SD,
+        },
+    };
+    ESP_RETURN_ON_ERROR(i2s_channel_init_std_mode(mic_rx, &mic_cfg), TAG, "mic i2s");
+    ESP_RETURN_ON_ERROR(i2s_channel_enable(mic_rx), TAG, "mic i2s on");
+
+    i2s_chan_config_t spk_chan_cfg = I2S_CHANNEL_DEFAULT_CONFIG(I2S_NUM_1, I2S_ROLE_MASTER);
+    spk_chan_cfg.auto_clear = true;
+    ESP_RETURN_ON_ERROR(i2s_new_channel(&spk_chan_cfg, &spk_tx, NULL), TAG, "spk i2s channel");
+    const i2s_std_config_t spk_cfg = {
+        .clk_cfg = I2S_STD_CLK_DEFAULT_CONFIG(MUSE_AUDIO_RATE),
+        .slot_cfg = I2S_STD_PHILIPS_SLOT_DEFAULT_CONFIG(I2S_DATA_BIT_WIDTH_16BIT, I2S_SLOT_MODE_STEREO),
+        .gpio_cfg = {
+            .mclk = GPIO_NUM_NC,
+            .bclk = SPK_BCLK,
+            .ws = SPK_WS,
+            .dout = SPK_DOUT,
+            .din = GPIO_NUM_NC,
+        },
+    };
+    ESP_RETURN_ON_ERROR(i2s_channel_init_std_mode(spk_tx, &spk_cfg), TAG, "spk i2s");
+    ESP_RETURN_ON_ERROR(i2s_channel_enable(spk_tx), TAG, "spk i2s on");
+
+    audio_codec_i2s_cfg_t mic_i2s = { .port = I2S_NUM_0, .rx_handle = mic_rx, .tx_handle = NULL };
+    const audio_codec_data_if_t *mic_data = audio_codec_new_i2s_data(&mic_i2s);
+    audio_codec_i2s_cfg_t spk_i2s = { .port = I2S_NUM_1, .rx_handle = NULL, .tx_handle = spk_tx };
+    const audio_codec_data_if_t *spk_data = audio_codec_new_i2s_data(&spk_i2s);
+    ESP_RETURN_ON_FALSE(mic_data && spk_data, ESP_ERR_NO_MEM, TAG, "i2s data if");
+
+    esp_codec_dev_cfg_t mic_dev_cfg = {
+        .dev_type = ESP_CODEC_DEV_TYPE_IN, .codec_if = NULL, .data_if = mic_data,
+    };
+    esp_codec_dev_cfg_t spk_dev_cfg = {
+        .dev_type = ESP_CODEC_DEV_TYPE_OUT, .codec_if = NULL, .data_if = spk_data,
+    };
+    *mic = esp_codec_dev_new(&mic_dev_cfg);
+    *spk = esp_codec_dev_new(&spk_dev_cfg);
+    return *mic && *spk ? ESP_OK : ESP_FAIL;
+}
+
+static unsigned poll_buttons(void)
+{
+    return muse_gpio_button_poll(&s_talk);
+}
+
+static void wait_buttons(int timeout_ms)
+{
+    muse_gpio_buttons_wait((muse_gpio_button_t *const[]){ &s_talk }, 1, timeout_ms);
+}
+
+/* USB-powered through the TTL port; no battery. */
+static esp_err_t read_power(muse_power_t *out)
+{
+    out->battery_pct = -1;
+    out->battery_mv = 0;
+    out->charging = false;
+    out->usb = true;
+    return ESP_OK;
+}
+
+static esp_err_t power_off(void)
+{
+    set_brightness(0);
+    esp_lcd_panel_disp_on_off(s_panel, false);
+    esp_sleep_enable_ext0_wakeup(TALK_GPIO, 0);
+    esp_deep_sleep_start();
+    return ESP_FAIL;
+}
+
+static const muse_board_t s_board = {
+    .name = "ESP32-S3 N16R8 CAM DIY (ST7789 + INMP441 + MAX98357A)",
+    .width = LCD_RES,
+    .height = LCD_RES,
+    .round = false,
+    .touch = false,
+    .talk_button = "boot",
+    .aux_button = NULL,
+    .talk_hint = { LV_ALIGN_BOTTOM_MID, 0, -8 },
+    .frame_ms = 40,
+    .init = init,
+    .display_start = display_start,
+    .display_lock = display_lock,
+    .display_unlock = esp_lv_adapter_unlock,
+    .set_brightness = set_brightness,
+    .panel_sleep = panel_sleep,
+    .display_pause = display_pause,
+    .audio_init = audio_init,
+    .mic_slot = 0,              /* one mic, on the left slot */
+    .poll_buttons = poll_buttons,
+    .wait_buttons = wait_buttons,
+    .read_power = read_power,
+    .power_off = power_off,
+};
+
+/* Home Link's app_main starts Muse with this board (main/main.c). */
+const muse_board_t *muse_board_get(void)
+{
+    return &s_board;
+}
