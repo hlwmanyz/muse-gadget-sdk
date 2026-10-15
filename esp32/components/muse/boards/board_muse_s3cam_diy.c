@@ -148,7 +148,7 @@ static lv_display_t *display_start(lv_indev_t **touch)
             .rotation = ESP_LV_ADAPTER_ROTATE_0,
             .hor_res = LCD_RES,
             .ver_res = LCD_RES,
-            .buffer_height = 20,
+            .buffer_height = 1,
             .use_psram = false,
             .require_double_buffer = false,
         },
