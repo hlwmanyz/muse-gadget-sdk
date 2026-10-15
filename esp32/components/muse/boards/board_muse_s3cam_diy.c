@@ -135,14 +135,19 @@ static lv_display_t *display_start(lv_indev_t **touch)
     esp_lcd_panel_disp_on_off(s_panel, true);
 
     /* DIAGNOSTIC: draw red/blue split directly, bypass LVGL.
-     * If user sees red/blue: SPI data path works.
-     * If user sees gray: SPI data path broken. */
+     * Draw 1 line at a time like xiaozhi (small DMA transfers).
+     * If user sees red/blue: SPI data path works. */
     {
-        static uint16_t test_buf[240 * 40];
-        for (int i = 0; i < 240 * 40; i++) test_buf[i] = 0xF800; /* red */
-        for (int y = 0; y < 120; y += 40) {
-            esp_lcd_panel_draw_bitmap(s_panel, 0, y, 240, y + 40, test_buf);
+        uint16_t line_buf[240];
+        for (int i = 0; i < 240; i++) line_buf[i] = 0xF800; /* red */
+        for (int y = 0; y < 120; y++) {
+            esp_lcd_panel_draw_bitmap(s_panel, 0, y, 240, y + 1, line_buf);
         }
+        for (int i = 0; i < 240; i++) line_buf[i] = 0x001F; /* blue */
+        for (int y = 120; y < 240; y++) {
+            esp_lcd_panel_draw_bitmap(s_panel, 0, y, 240, y + 1, line_buf);
+        }
+    }
         for (int i = 0; i < 240 * 40; i++) test_buf[i] = 0x001F; /* blue */
         for (int y = 120; y < 240; y += 40) {
             esp_lcd_panel_draw_bitmap(s_panel, 0, y, 240, y + 40, test_buf);
