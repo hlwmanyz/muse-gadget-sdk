@@ -35,6 +35,7 @@
 #include "esp_lcd_panel_vendor.h"
 #include "esp_log.h"
 #include "esp_lv_adapter.h"
+#include "muse_lcd_bands.h"
 #include "esp_sleep.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -47,6 +48,8 @@ static const char *TAG = "board";
 
 /* ST7789 1.54" 240x240, SPI. */
 #define LCD_RES 240
+#define DRAW_BUF_LINES 40
+#define LCD_CHUNK_BYTES 4800
 #define LCD_HOST SPI2_HOST
 #define LCD_SCLK GPIO_NUM_19
 #define LCD_MOSI GPIO_NUM_20
@@ -148,13 +151,10 @@ static lv_display_t *display_start(lv_indev_t **touch)
             .rotation = ESP_LV_ADAPTER_ROTATE_0,
             .hor_res = LCD_RES,
             .ver_res = LCD_RES,
-            .buffer_height = 1,
-            .use_psram = false,
-            .require_double_buffer = false,
         },
         .tear_avoid_mode = ESP_LV_ADAPTER_TEAR_AVOID_MODE_NONE,
     };
-    lv_display_t *disp = esp_lv_adapter_register_display(&disp_cfg);
+    lv_display_t *disp = muse_lcd_bands_register(disp_cfg, DRAW_BUF_LINES, LCD_CHUNK_BYTES);
     if (!disp || esp_lv_adapter_start() != ESP_OK) {
         return NULL;
     }
