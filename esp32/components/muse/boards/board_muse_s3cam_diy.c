@@ -123,7 +123,7 @@ static lv_display_t *display_start(lv_indev_t **touch)
     }
     const esp_lcd_panel_dev_config_t panel_cfg = {
         .reset_gpio_num = LCD_RST,
-        .rgb_ele_order = LCD_RGB_ELEMENT_ORDER_RGB, /* bread-compact-wifi-s3cam */
+        .rgb_ele_order = LCD_RGB_ELEMENT_ORDER_RGB,
         .bits_per_pixel = 16,
     };
     if (esp_lcd_new_panel_st7789(io, &panel_cfg, &s_panel) != ESP_OK) {
@@ -134,19 +134,6 @@ static lv_display_t *display_start(lv_indev_t **touch)
     esp_lcd_panel_invert_color(s_panel, true); /* bread-compact-wifi-s3cam */
     esp_lcd_panel_disp_on_off(s_panel, true);
 
-    /* DIAGNOSTIC: draw red/blue split directly, bypass LVGL.
-     * Draw 1 line at a time like xiaozhi (small DMA transfers).
-     * If user sees red/blue: SPI data path works. */
-    {
-        uint16_t line_buf[240];
-        for (int i = 0; i < 240; i++) line_buf[i] = 0xF800; /* red */
-        for (int y = 0; y < 120; y++) {
-            esp_lcd_panel_draw_bitmap(s_panel, 0, y, 240, y + 1, line_buf);
-        }
-        for (int i = 0; i < 240; i++) line_buf[i] = 0x001F; /* blue */
-        for (int y = 120; y < 240; y++) {
-            esp_lcd_panel_draw_bitmap(s_panel, 0, y, 240, y + 1, line_buf);
-        }
     }
 
     esp_lv_adapter_config_t adapter_cfg = ESP_LV_ADAPTER_DEFAULT_CONFIG();
