@@ -148,11 +148,6 @@ static lv_display_t *display_start(lv_indev_t **touch)
             esp_lcd_panel_draw_bitmap(s_panel, 0, y, 240, y + 1, line_buf);
         }
     }
-        for (int i = 0; i < 240 * 40; i++) test_buf[i] = 0x001F; /* blue */
-        for (int y = 120; y < 240; y += 40) {
-            esp_lcd_panel_draw_bitmap(s_panel, 0, y, 240, y + 40, test_buf);
-        }
-    }
 
     esp_lv_adapter_config_t adapter_cfg = ESP_LV_ADAPTER_DEFAULT_CONFIG();
     adapter_cfg.task_core_id = MUSE_UI_CORE;
