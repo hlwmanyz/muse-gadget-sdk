@@ -1,1 +1,137 @@
-IyBDb3B5cmlnaHQgKGMpIE1ldGEgUGxhdGZvcm1zLCBJbmMuIGFuZCBhZmZpbGlhdGVzLgojCiMgTGljZW5zZWQgdW5kZXIgdGhlIEFwYWNoZSBMaWNlbnNlLCBWZXJzaW9uIDIuMCAodGhlICJMaWNlbnNlIik7CiMgeW91IG1heSBub3QgdXNlIHRoaXMgZmlsZSBleGNlcHQgaW4gY29tcGxpYW5jZSB3aXRoIHRoZSBMaWNlbnNlLgojIFlvdSBtYXkgb2J0YWluIGEgY29weSBvZiB0aGUgTGljZW5zZSBhdAojCiMgICAgIGh0dHA6Ly93d3cuYXBhY2hlLm9yZy9saWNlbnNlcy9MSUNFTlNFLTIuMAojCiMgVW5sZXNzIHJlcXVpcmVkIGJ5IGFwcGxpY2FibGUgbGF3IG9yIGFncmVlZCB0byBpbiB3cml0aW5nLCBzb2Z0d2FyZQojIGRpc3RyaWJ1dGVkIHVuZGVyIHRoZSBMaWNlbnNlIGlzIGRpc3RyaWJ1dGVkIG9uIGFuICJBUyBJUyIgQkFTSVMsCiMgV0lUSE9VVCBXQVJSQU5USUVTIE9SIENPTkRJVElPTlMgT0YgQU5ZIEtJTkQsIGVpdGhlciBleHByZXNzIG9yIGltcGxpZWQuCiMgU2VlIHRoZSBMaWNlbnNlIGZvciB0aGUgc3BlY2lmaWMgbGFuZ3VhZ2UgZ292ZXJuaW5nIHBlcm1pc3Npb25zIGFuZAojIGxpbWl0YXRpb25zIHVuZGVyIHRoZSBMaWNlbnNlLgoKbWVudSAiTXVzZSIKCiAgICBjaG9pY2UgTVVTRV9CT0FSRAogICAgICAgIHByb21wdCAiQm9hcmQgd2l0aCB0aGUgZnVsbCBVSSIKICAgICAgICBkZWZhdWx0IE1VU0VfQk9BUkRfTk9ORQogICAgICAgIGhlbHAKICAgICAgICAgICAgVGhlIFVJIGlzIHRoZSB2b2ljZSBjb21wYW5pb24gb24gYm9hcmRzIHdpdGggYSBzY3JlZW46IGFuCiAgICAgICAgICAgIGFuaW1hdGVkIGF2YXRhciwgcHVzaC10by10YWxrIGNoYXQsIHNldHRpbmdzLCBhbmQgYmF0dGVyeQogICAgICAgICAgICBoYW5kbGluZy4gSXQgcnVucyBiZXNpZGUgSG9tZSBMaW5rLCB3aGljaCBvd25zIFdpLUZpLCBCTEUKICAgICAgICAgICAgcGFpcmluZywgY3JlZGVudGlhbHMgYW5kIE9UQS4gUGljayB0aGUgYm9hcmQgaXQgcnVucyBvbiwgb3Igbm9uZQogICAgICAgICAgICBmb3IgYSBMaW5rIHdpdGhvdXQgYSBkaXNwbGF5LgoKICAgICAgICBjb25maWcgTVVTRV9CT0FSRF9OT05FCiAgICAgICAgICAgIGJvb2wgIk5vbmUgKEhvbWUgTGluayB3aXRob3V0IGEgZGlzcGxheSkiCgogICAgICAgIGNvbmZpZyBNVVNFX0JPQVJEX1dBVkVTSEFSRV9TM18xNzVDCiAgICAgICAgICAgIGJvb2wgIldhdmVzaGFyZSBFU1AzMi1TMy1Ub3VjaC1BTU9MRUQtMS43NUMiCiAgICAgICAgICAgIGRlcGVuZHMgb24gSURGX1RBUkdFVF9FU1AzMlMzCgogICAgICAgIGNvbmZpZyBNVVNFX0JPQVJEX1dBVkVTSEFSRV9TM18xNzUKICAgICAgICAgICAgYm9vbCAiV2F2ZXNoYXJlIEVTUDMyLVMzLVRvdWNoLUFNT0xFRC0xLjc1IChub3QgdGhlIDEuNzVDKSIKICAgICAgICAgICAgZGVwZW5kcyBvbiBJREZfVEFSR0VUX0VTUDMyUzMKCiAgICAgICAgY29uZmlnIE1VU0VfQk9BUkRfQUlQSQogICAgICAgICAgICBib29sICJBSVBJIExpdGUgKEVTUDMyLVMzLCB0d28gYnV0dG9ucywgbm8gdG91Y2gpIgogICAgICAgICAgICBkZXBlbmRzIG9uIElERl9UQVJHRVRfRVNQMzJTMwoKICAgICAgICBjb25maWcgTVVTRV9CT0FSRF9TM0NBTV9ESVkKICAgICAgICAgICAgYm9vbCAiRVNQMzItUzMgTjE2UjggQ0FNIERJWSAoU1Q3Nzg5ICsgSU5NUDQ0MSArIE1BWDk4MzU3QSwgbm8gdG91Y2gpIgogICAgICAgICAgICBkZXBlbmRzIG9uIElERl9UQVJHRVRfRVNQMzJTMwoKICAgICAgICBjb25maWcgTVVTRV9CT0FSRF9FU1BSRVNTSUZfQk9YXzMKICAgICAgICAgICAgYm9vbCAiRXNwcmVzc2lmIEVTUDMyLVMzLUJPWC0zICgzMjB4MjQwIHRvdWNoIExDRCwgc3BlYWtlciBhbmQgbWljcm9waG9uZXMpIgogICAgICAgICAgICBkZXBlbmRzIG9uIElERl9UQVJHRVRfRVNQMzJTMwoKICAgICAgICBjb25maWcgTVVTRV9CT0FSRF9XQVZFU0hBUkVfQzZfMTgKICAgICAgICAgICAgYm9vbCAiV2F2ZXNoYXJlIEVTUDMyLUM2LVRvdWNoLUFNT0xFRC0xLjgiCiAgICAgICAgICAgIGRlcGVuZHMgb24gSURGX1RBUkdFVF9FU1AzMkM2CgogICAgICAgIGNvbmZpZyBNVVNFX0JPQVJEX1NFTlNFQ0FQX1dBVENIRVIKICAgICAgICAgICAgYm9vbCAiU2VlZWQgU2Vuc2VDQVAgV2F0Y2hlciAoRVNQMzItUzMsIHJvdW5kIHRvdWNoIExDRCwgd2hlZWwpIgogICAgICAgICAgICBkZXBlbmRzIG9uIElERl9UQVJHRVRfRVNQMzJTMwoKICAgICAgICBjb25maWcgTVVTRV9CT0FSRF9NNVNUQUNLX0NBUkRQVVRFUl9BRFYKICAgICAgICAgICAgYm9vbCAiTTVTdGFjayBDYXJkcHV0ZXIgQURWIChFU1AzMi1TMywga2V5Ym9hcmQsIG5vIFBTUkFNKSIKICAgICAgICAgICAgZGVwZW5kcyBvbiBJREZfVEFSR0VUX0VTUDMyUzMKCiAgICAgICAgY29uZmlnIE1VU0VfQk9BUkRfTTVTVEFDS19TVElDS1MzCiAgICAgICAgICAgIGJvb2wgIk01U3RhY2sgU3RpY2tTMyAoRVNQMzItUzMsIHR3byBidXR0b25zLCBubyB0b3VjaCkiCiAgICAgICAgICAgIGRlcGVuZHMgb24gSURGX1RBUkdFVF9FU1AzMlMzCgogICAgICAgIGNvbmZpZyBNVVNFX0JPQVJEX001U1RBQ0tfU1RJQ0tDX1BMVVMyCiAgICAgICAgICAgIGJvb2wgIk01U3RhY2sgU3RpY2tDIFBsdXMyIChFU1AzMiwgdHdvIGJ1dHRvbnMsIG5vIHRvdWNoKSIKICAgICAgICAgICAgZGVwZW5kcyBvbiBJREZfVEFSR0VUX0VTUDMyCgogICAgICAgIGNvbmZpZyBNVVNFX0JPQVJEX001U1RBQ0tfU1RPUFdBVENICiAgICAgICAgICAgIGJvb2wgIk01U3RhY2sgU3RvcFdhdGNoIChFU1AzMi1TMywgcm91bmQgdG91Y2ggQU1PTEVEKSIKICAgICAgICAgICAgZGVwZW5kcyBvbiBJREZfVEFSR0VUX0VTUDMyUzMKCiAgICAgICAgY29uZmlnIE1VU0VfQk9BUkRfTTVTVEFDS19DT1JFUzMKICAgICAgICAgICAgYm9vbCAiTTVTdGFjayBDb3JlUzMgKEVTUDMyLVMzLCAzMjB4MjQwIHRvdWNoIExDRCwgc3BlYWtlciBhbmQgbWljcm9waG9uZXMpIgogICAgICAgICAgICBkZXBlbmRzIG9uIElERl9UQVJHRVRfRVNQMzJTMwogICAgZW5kY2hvaWNlCgogICAgY29uZmlnIE1VU0VfRU5BQkxFRAogICAgICAgIGJvb2wKICAgICAgICBkZWZhdWx0IHkgaWYgIU1VU0VfQk9BUkRfTk9ORQoKICAgICMgQWx3YXlzIGRlZmluZWQsIHVubGlrZSB0aGUgdGFyZ2V0LWRlcGVuZGVudCBib2FyZCBvcHRpb25zLCBzbwogICAgIyBpZGZfY29tcG9uZW50LnltbCBydWxlcyBjYW4gc2VsZWN0IGVhY2ggYm9hcmQncyBtYW5hZ2VkIGNvbXBvbmVudHMuCiAgICBjb25maWcgTVVTRV9CT0FSRF9JRAogICAgICAgIHN0cmluZwogICAgICAgIGRlZmF1bHQgIndhdmVzaGFyZV9zM18xNzVjIiBpZiBNVVNFX0JPQVJEX1dBVkVTSEFSRV9TM18xNzVDCiAgICAgICAgZGVmYXVsdCAid2F2ZXNoYXJlX3MzXzE3NSIgaWYgTVVTRV9CT0FSRF9XQVZFU0hBUkVfUzNfMTc1CiAgICAgICAgZGVmYXVsdCAiYWlwaSIgaWYgTVVTRV9CT0FSRF9BSVBJCiAgICAgICAgZGVmYXVsdCAiczNjYW1fZGl5IiBpZiBNVVNFX0JPQVJEX1MzQ0FNX0RJWQogICAgICAgIGRlZmF1bHQgImVzcHJlc3NpZl9ib3hfMyIgaWYgTVVTRV9CT0FSRF9FU1BSRVNTSUZfQk9YXzMKICAgICAgICBkZWZhdWx0ICJ3YXZlc2hhcmVfYzZfMTgiIGlmIE1VU0VfQk9BUkRfV0FWRVNIQVJFX0M2XzE4CiAgICAgICAgZGVmYXVsdCAic2Vuc2VjYXBfd2F0Y2hlciIgaWYgTVVTRV9CT0FSRF9TRU5TRUNBUF9XQVRDSEVSCiAgICAgICAgZGVmYXVsdCAibTVzdGFja19zdGlja3MzIiBpZiBNVVNFX0JPQVJEX001U1RBQ0tfU1RJQ0tTMwogICAgICAgIGRlZmF1bHQgIm01c3RhY2tfc3RpY2tjX3BsdXMyIiBpZiBNVVNFX0JPQVJEX001U1RBQ0tfU1RJQ0tDX1BMVVMyCiAgICAgICAgZGVmYXVsdCAibTVzdGFja19jYXJkcHV0ZXJfYWR2IiBpZiBNVVNFX0JPQVJEX001U1RBQ0tfQ0FSRFBVVEVSX0FEVgogICAgICAgIGRlZmF1bHQgIm01c3RhY2tfc3RvcHdhdGNoIiBpZiBNVVNFX0JPQVJEX001U1RBQ0tfU1RPUFdBVENICiAgICAgICAgZGVmYXVsdCAibTVzdGFja19jb3JlczMiIGlmIE1VU0VfQk9BUkRfTTVTVEFDS19DT1JFUzMKICAgICAgICBkZWZhdWx0ICJub25lIgoKICAgICMgVGhlIE11c2UgdG9vbHMnIHNlcmlhbCBwb3J0OiB0aGUgY29uc29sZSBVQVJUIGJlaGluZCB0aGUgYm9hcmQncyBVU0IKICAgICMgYnJpZGdlLCB3aGVyZSB0aGUgY2hpcCdzIG93biBVU0IgU2VyaWFsL0pUQUcgaXNuJ3Qgd2lyZWQgdG8gYSBjb25uZWN0b3IKICAgICMgKHRoZSBXYXRjaGVyJ3MgVVNCLUMgZ29lcyB0byBhIENIMzQyKSBvciB0aGUgY2hpcCBoYXMgbm9uZS4KICAgIGNvbmZpZyBNVVNFX0NPTlNPTEVfVUFSVAogICAgICAgIGJvb2wKICAgICAgICBkZWZhdWx0IHkgaWYgTVVTRV9CT0FSRF9TRU5TRUNBUF9XQVRDSEVSIHx8ICFTT0NfVVNCX1NFUklBTF9KVEFHX1NVUFBPUlRFRAoKICAgICMgQSBib2FyZCBvdmVybGF5IGNhbiByYWlzZSB0aGlzIGZvciBhIHF1aWV0IHNwZWFrZXIuCiAgICBjb25maWcgTVVTRV9ERUZBVUxUX1ZPTFVNRQogICAgICAgIGludCAiU3BlYWtlciB2b2x1bWUgdW50aWwgb25lIGlzIGNob3NlbiBpbiBzZXR0aW5ncyAocGVyY2VudCkiCiAgICAgICAgcmFuZ2UgMCAxMDAKICAgICAgICBkZWZhdWx0IDcwCgogICAgY29uZmlnIE1VU0VfV0FUQ0hFUl9DQU1FUkEKICAgICAgICBib29sICJTZW5zZUNBUCBXYXRjaGVyIGNhbWVyYSBjYXB0dXJlIGFuZCBsaXZlIHByZXZpZXciCiAgICAgICAgZGVwZW5kcyBvbiBNVVNFX0JPQVJEX1NFTlNFQ0FQX1dBVENIRVIgJiYgU1BJUkFNCiAgICAgICAgZGVmYXVsdCBuCiAgICAgICAgaGVscAogICAgICAgICAgICBFbmFibGUgdGhlIGNhbWVyYS5jYXB0dXJlIEhvbWUgTGluayBjb21tYW5kIGFuZCB0aGUgd2hlZWwKICAgICAgICAgICAgZG91YmxlLWNsaWNrIGNhbWVyYSBwcmV2aWV3LiBDYW1lcmEgYnVmZmVycyBhbmQgdGFza3MgY29uc3VtZQogICAgICAgICAgICBtZW1vcnkgYW5kIHByZXZpZXcgZGVjb2Rpbmcgc2hhcmVzIENQVSB0aW1lIHdpdGggdm9pY2UgYW5kIExpbmsuCiAgICAgICAgICAgIExlYXZlIGRpc2FibGVkIHRvIGJ1aWxkIHdpdGhvdXQgY2FtZXJhIHN1cHBvcnQuCgogICAgY29uZmlnIE1VU0VfSEFUQ0gKICAgICAgICBib29sICJNdXNlJ3Mgb3duIHZvaWNlIHNlc3Npb24iCiAgICAgICAgZGVwZW5kcyBvbiBNVVNFX0VOQUJMRUQKICAgICAgICBkZWZhdWx0IHkgaWYgU1BJUkFNCiAgICAgICAgZGVmYXVsdCBuCiAgICAgICAgaGVscAogICAgICAgICAgICBQdXNoLXRvLXRhbGsgdHVybnMgZ28gb3ZlciBhIHZvaWNlIHNlc3Npb24gb2YgTXVzZSdzIG93biwgdG8gdGhlCiAgICAgICAgICAgIFZNIEhvbWUgTGluayBpcyBwYWlyZWQgd2l0aCBvciBvbmUgc2V0IHVwIG9uIHRoZSBkZXZpY2Ugd2l0aCBhCiAgICAgICAgICAgIGRldmljZSB0b2tlbi4gUmVwbGllcyBhcmUgdGV4dCwgc2hvd24gYXMgY2FwdGlvbnM7IHN0YXJ0X3R0cyBpbgogICAgICAgICAgICBtdXNlX2NoYXRfc2Vzc2lvbi5jcHAgaXMgd2hlcmUgYSBUVFMgQVBJIG9mIHlvdXIgb3duIGNhbiBzcGVhawogICAgICAgICAgICB0aGVtLiBOZWVkcyBQU1JBTS4gV2l0aG91dCBpdCwgdm9pY2Ugbm90ZXMgZ28gb3ZlciBIb21lIExpbmsncyBvd24KICAgICAgICAgICAgc2Vzc2lvbiB0byBpdHMgcGFpcmVkIFZNIGFuZCByZXBsaWVzIGFyZSBzaG93biBhcyB0ZXh0LgoKZW5kbWVudQo=
+# Copyright (c) Meta Platforms, Inc. and affiliates.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+menu "Muse"
+
+    choice MUSE_BOARD
+        prompt "Board with the full UI"
+        default MUSE_BOARD_NONE
+        help
+            The UI is the voice companion on boards with a screen: an
+            animated avatar, push-to-talk chat, settings, and battery
+            handling. It runs beside Home Link, which owns Wi-Fi, BLE
+            pairing, credentials and OTA. Pick the board it runs on, or none
+            for a Link without a display.
+
+        config MUSE_BOARD_NONE
+            bool "None (Home Link without a display)"
+
+        config MUSE_BOARD_WAVESHARE_S3_175C
+            bool "Waveshare ESP32-S3-Touch-AMOLED-1.75C"
+            depends on IDF_TARGET_ESP32S3
+
+        config MUSE_BOARD_WAVESHARE_S3_175
+            bool "Waveshare ESP32-S3-Touch-AMOLED-1.75 (not the 1.75C)"
+            depends on IDF_TARGET_ESP32S3
+
+        config MUSE_BOARD_AIPI
+            bool "AIPI Lite (ESP32-S3, two buttons, no touch)"
+            depends on IDF_TARGET_ESP32S3
+
+        config MUSE_BOARD_S3CAM_DIY
+            bool "ESP32-S3 N16R8 CAM DIY (ST7789 + INMP441 + MAX98357A, no touch)"
+            depends on IDF_TARGET_ESP32S3
+
+        config MUSE_BOARD_ESPRESSIF_BOX_3
+            bool "Espressif ESP32-S3-BOX-3 (320x240 touch LCD, speaker and microphones)"
+            depends on IDF_TARGET_ESP32S3
+
+        config MUSE_BOARD_WAVESHARE_C6_18
+            bool "Waveshare ESP32-C6-Touch-AMOLED-1.8"
+            depends on IDF_TARGET_ESP32C6
+
+        config MUSE_BOARD_SENSECAP_WATCHER
+            bool "Seeed SenseCAP Watcher (ESP32-S3, round touch LCD, wheel)"
+            depends on IDF_TARGET_ESP32S3
+
+        config MUSE_BOARD_M5STACK_CARDPUTER_ADV
+            bool "M5Stack Cardputer ADV (ESP32-S3, keyboard, no PSRAM)"
+            depends on IDF_TARGET_ESP32S3
+
+        config MUSE_BOARD_M5STACK_STICKS3
+            bool "M5Stack StickS3 (ESP32-S3, two buttons, no touch)"
+            depends on IDF_TARGET_ESP32S3
+
+        config MUSE_BOARD_M5STACK_STICKC_PLUS2
+            bool "M5Stack StickC Plus2 (ESP32, two buttons, no touch)"
+            depends on IDF_TARGET_ESP32
+
+        config MUSE_BOARD_M5STACK_STOPWATCH
+            bool "M5Stack StopWatch (ESP32-S3, round touch AMOLED)"
+            depends on IDF_TARGET_ESP32S3
+
+        config MUSE_BOARD_M5STACK_CORES3
+            bool "M5Stack CoreS3 (ESP32-S3, 320x240 touch LCD, speaker and microphones)"
+            depends on IDF_TARGET_ESP32S3
+    endchoice
+
+    config MUSE_ENABLED
+        bool
+        default y if !MUSE_BOARD_NONE
+
+    # Always defined, unlike the target-dependent board options, so
+    # idf_component.yml rules can select each board's managed components.
+    config MUSE_BOARD_ID
+        string
+        default "waveshare_s3_175c" if MUSE_BOARD_WAVESHARE_S3_175C
+        default "waveshare_s3_175" if MUSE_BOARD_WAVESHARE_S3_175
+        default "aipi" if MUSE_BOARD_AIPI
+        default "s3cam_diy" if MUSE_BOARD_S3CAM_DIY
+        default "espressif_box_3" if MUSE_BOARD_ESPRESSIF_BOX_3
+        default "waveshare_c6_18" if MUSE_BOARD_WAVESHARE_C6_18
+        default "sensecap_watcher" if MUSE_BOARD_SENSECAP_WATCHER
+        default "m5stack_sticks3" if MUSE_BOARD_M5STACK_STICKS3
+        default "m5stack_stickc_plus2" if MUSE_BOARD_M5STACK_STICKC_PLUS2
+        default "m5stack_cardputer_adv" if MUSE_BOARD_M5STACK_CARDPUTER_ADV
+        default "m5stack_stopwatch" if MUSE_BOARD_M5STACK_STOPWATCH
+        default "m5stack_cores3" if MUSE_BOARD_M5STACK_CORES3
+        default "none"
+
+    # The Muse tools' serial port: the console UART behind the board's USB
+    # bridge, where the chip's own USB Serial/JTAG isn't wired to a connector
+    # (the Watcher's USB-C goes to a CH342) or the chip has none.
+    config MUSE_CONSOLE_UART
+        bool
+        default y if MUSE_BOARD_SENSECAP_WATCHER || !SOC_USB_SERIAL_JTAG_SUPPORTED
+
+    # A board overlay can raise this for a quiet speaker.
+    config MUSE_DEFAULT_VOLUME
+        int "Speaker volume until one is chosen in settings (percent)"
+        range 0 100
+        default 70
+
+    config MUSE_WATCHER_CAMERA
+        bool "SenseCAP Watcher camera capture and live preview"
+        depends on MUSE_BOARD_SENSECAP_WATCHER && SPIRAM
+        default n
+        help
+            Enable the camera.capture Home Link command and the wheel
+            double-click camera preview. Camera buffers and tasks consume
+            memory and preview decoding shares CPU time with voice and Link.
+            Leave disabled to build without camera support.
+
+    config MUSE_HATCH
+        bool "Muse's own voice session"
+        depends on MUSE_ENABLED
+        default y if SPIRAM
+        default n
+        help
+            Push-to-talk turns go over a voice session of Muse's own, to the
+            VM Home Link is paired with or one set up on the device with a
+            device token. Replies are text, shown as captions; start_tts in
+            muse_chat_session.cpp is where a TTS API of your own can speak
+            them. Needs PSRAM. Without it, voice notes go over Home Link's own
+            session to its paired VM and replies are shown as text.
+
+endmenu
