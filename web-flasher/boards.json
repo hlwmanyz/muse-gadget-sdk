@@ -34,5 +34,9 @@
   {
     "board": "reterminal-e1002",
     "name": "Seeed Studio reTerminal E1002 (7.3\" colour e-paper)"
+  },
+  {
+    "board": "muse-s3cam-diy",
+    "name": "ESP32-S3 N16R8 CAM DIY (ST7789 + INMP441 + MAX98357A)"
   }
 ]
