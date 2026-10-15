@@ -148,9 +148,9 @@ static lv_display_t *display_start(lv_indev_t **touch)
             .rotation = ESP_LV_ADAPTER_ROTATE_0,
             .hor_res = LCD_RES,
             .ver_res = LCD_RES,
-            .buffer_height = DRAW_BUF_LINES,
+            .buffer_height = 20,
             .use_psram = false,
-            .require_double_buffer = true,
+            .require_double_buffer = false,
         },
         .tear_avoid_mode = ESP_LV_ADAPTER_TEAR_AVOID_MODE_NONE,
     };
