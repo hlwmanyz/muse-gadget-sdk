@@ -134,6 +134,21 @@ static lv_display_t *display_start(lv_indev_t **touch)
     esp_lcd_panel_invert_color(s_panel, true); /* bread-compact-wifi-s3cam */
     esp_lcd_panel_disp_on_off(s_panel, true);
 
+    /* DIAGNOSTIC: draw red/blue split directly, bypass LVGL.
+     * If user sees red/blue: SPI data path works.
+     * If user sees gray: SPI data path broken. */
+    {
+        static uint16_t test_buf[240 * 40];
+        for (int i = 0; i < 240 * 40; i++) test_buf[i] = 0xF800; /* red */
+        for (int y = 0; y < 120; y += 40) {
+            esp_lcd_panel_draw_bitmap(s_panel, 0, y, 240, y + 40, test_buf);
+        }
+        for (int i = 0; i < 240 * 40; i++) test_buf[i] = 0x001F; /* blue */
+        for (int y = 120; y < 240; y += 40) {
+            esp_lcd_panel_draw_bitmap(s_panel, 0, y, 240, y + 40, test_buf);
+        }
+    }
+
     esp_lv_adapter_config_t adapter_cfg = ESP_LV_ADAPTER_DEFAULT_CONFIG();
     adapter_cfg.task_core_id = MUSE_UI_CORE;
     adapter_cfg.task_priority = MUSE_UI_PRIORITY;
