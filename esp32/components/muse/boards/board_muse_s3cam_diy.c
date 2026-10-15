@@ -57,8 +57,6 @@ static const char *TAG = "board";
 #define LCD_DC GPIO_NUM_47
 #define LCD_RST GPIO_NUM_21
 #define LCD_BL GPIO_NUM_38
-#define DRAW_BUF_LINES 40
-
 /* INMP441 I2S microphone (L/R strapped to GND: left slot). */
 #define MIC_WS GPIO_NUM_1
 #define MIC_SCK GPIO_NUM_2
