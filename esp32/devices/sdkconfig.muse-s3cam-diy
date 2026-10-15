@@ -52,3 +52,4 @@ CONFIG_SPIRAM_ALLOW_BSS_SEG_EXTERNAL_MEMORY=y
 CONFIG_ESP_WIFI_STATIC_TX_BUFFER_NUM=8
 # Single-button menu.
 CONFIG_LV_FONT_MONTSERRAT_12=y
+# Verified against upstream main 2026-10-13; triggers the first CI build for this board.
