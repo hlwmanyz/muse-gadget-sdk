@@ -113,7 +113,10 @@ static lv_display_t *display_start(lv_indev_t **touch)
         .cs_gpio_num = LCD_CS,
         .dc_gpio_num = LCD_DC,
         .spi_mode = 0,
-        .pclk_hz = 40 * 1000 * 1000,
+        /* 10 MHz: breadboard jumper wires cannot reliably carry 40 MHz
+         * SPI; corrupted init commands leave the ST7789 white with the
+         * backlight on. */
+        .pclk_hz = 10 * 1000 * 1000,
         .trans_queue_depth = 10,
         .lcd_cmd_bits = 8,
         .lcd_param_bits = 8,
