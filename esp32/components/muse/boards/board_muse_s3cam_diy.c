@@ -123,7 +123,7 @@ static lv_display_t *display_start(lv_indev_t **touch)
     }
     const esp_lcd_panel_dev_config_t panel_cfg = {
         .reset_gpio_num = LCD_RST,
-        .rgb_ele_order = LCD_RGB_ELEMENT_ORDER_RGB, /* xiaozhi-proven */
+        .rgb_ele_order = LCD_RGB_ELEMENT_ORDER_BGR,
         .bits_per_pixel = 16,
     };
     if (esp_lcd_new_panel_st7789(io, &panel_cfg, &s_panel) != ESP_OK) {
@@ -131,7 +131,7 @@ static lv_display_t *display_start(lv_indev_t **touch)
     }
     esp_lcd_panel_reset(s_panel);
     esp_lcd_panel_init(s_panel);
-    esp_lcd_panel_invert_color(s_panel, true); /* xiaozhi-proven */
+    esp_lcd_panel_invert_color(s_panel, false);
     esp_lcd_panel_disp_on_off(s_panel, true);
 
     esp_lv_adapter_config_t adapter_cfg = ESP_LV_ADAPTER_DEFAULT_CONFIG();
