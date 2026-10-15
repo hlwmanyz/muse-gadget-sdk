@@ -47,7 +47,7 @@ static const char *TAG = "board";
 
 /* ST7789 1.54" 240x240, SPI. */
 #define LCD_RES 240
-#define LCD_HOST SPI3_HOST
+#define LCD_HOST SPI2_HOST
 #define LCD_SCLK GPIO_NUM_19
 #define LCD_MOSI GPIO_NUM_20
 #define LCD_CS GPIO_NUM_45
