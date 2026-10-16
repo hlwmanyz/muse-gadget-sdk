@@ -38,6 +38,7 @@
 #include "esp_heap_caps.h"
 #include "esp_sleep.h"
 #include "freertos/FreeRTOS.h"
+#include "freertos/semphr.h"
 #include "freertos/task.h"
 
 #include "muse_audio.h"
