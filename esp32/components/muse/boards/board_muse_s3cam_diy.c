@@ -34,6 +34,7 @@
 #include "esp_lcd_panel_ops.h"
 #include "esp_lcd_panel_vendor.h"
 #include "esp_log.h"
+#include "esp_heap_caps.h"
 #include "esp_lv_adapter.h"
 #include "esp_sleep.h"
 #include "freertos/FreeRTOS.h"
@@ -72,6 +73,21 @@ static muse_gpio_button_t s_talk;
 static esp_err_t init(void)
 {
     return muse_gpio_button_init(&s_talk, TALK_GPIO);
+}
+
+/* Custom LVGL flush: byte-swap (panel needs BE) then draw_bitmap (proven working). */
+static void s3cam_flush_cb(lv_display_t *disp, const lv_area_t *area, uint8_t *px_map)
+{
+    uint16_t *px = (uint16_t *)px_map;
+    int32_t w = area->x2 - area->x1 + 1;
+    int32_t h = area->y2 - area->y1 + 1;
+    int32_t n = w * h;
+    for (int32_t i = 0; i < n; i++) {
+        uint16_t v = px[i];
+        px[i] = (uint16_t)((v << 8) | (v >> 8));
+    }
+    esp_lcd_panel_draw_bitmap(s_panel, area->x1, area->y1, area->x2 + 1, area->y2 + 1, px_map);
+    lv_display_flush_ready(disp);
 }
 
 static lv_display_t *display_start(lv_indev_t **touch)
@@ -138,22 +154,21 @@ static lv_display_t *display_start(lv_indev_t **touch)
     if (esp_lv_adapter_init(&adapter_cfg) != ESP_OK) {
         return NULL;
     }
-    const esp_lv_adapter_display_config_t disp_cfg = {
-        .panel = s_panel,
-        .panel_io = io,
-        .profile = {
-            .interface = ESP_LV_ADAPTER_PANEL_IF_OTHER,
-            .rotation = ESP_LV_ADAPTER_ROTATE_0,
-            .hor_res = LCD_RES,
-            .ver_res = LCD_RES,
-            .buffer_height = 40,
-            .use_psram = false,
-            .require_double_buffer = true,
-        },
-        .tear_avoid_mode = ESP_LV_ADAPTER_TEAR_AVOID_MODE_NONE,
-    };
-    lv_display_t *disp = esp_lv_adapter_register_display(&disp_cfg);
-    if (!disp || esp_lv_adapter_start() != ESP_OK) {
+    /* Manual LVGL display with custom flush (bypass adapter's broken flush). */
+    lv_display_t *disp = lv_display_create(LCD_RES, LCD_RES);
+    if (!disp) {
+        return NULL;
+    }
+    /* 20-line draw buffer in DMA-capable internal RAM (like xiaozhi). */
+    size_t buf_sz = LCD_RES * 20 * sizeof(uint16_t);
+    uint8_t *buf1 = heap_caps_malloc(buf_sz, MALLOC_CAP_DMA | MALLOC_CAP_INTERNAL);
+    if (!buf1) {
+        lv_display_delete(disp);
+        return NULL;
+    }
+    lv_display_set_draw_buffers(disp, buf1, NULL, buf_sz, LV_DISPLAY_RENDER_MODE_PARTIAL);
+    lv_display_set_flush_cb(disp, s3cam_flush_cb);
+    if (esp_lv_adapter_start() != ESP_OK) {
         return NULL;
     }
     return disp;
