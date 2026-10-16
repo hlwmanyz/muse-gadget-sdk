@@ -36,6 +36,7 @@
 #include "esp_log.h"
 #include "esp_heap_caps.h"
 #include "esp_lv_adapter.h"
+#include "lvgl.h"
 #include "esp_sleep.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
