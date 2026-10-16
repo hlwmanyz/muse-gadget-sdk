@@ -96,6 +96,7 @@ static void s3cam_lvgl_task(void *arg)
     (void)arg;
     while (1) {
         if (!s_lvgl_paused && xSemaphoreTake(s_lvgl_mutex, portMAX_DELAY) == pdTRUE) {
+            lv_tick_inc(10);
             lv_timer_handler();
             xSemaphoreGive(s_lvgl_mutex);
         }
