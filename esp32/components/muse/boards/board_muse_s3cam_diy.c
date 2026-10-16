@@ -142,7 +142,7 @@ static lv_display_t *display_start(lv_indev_t **touch)
         .panel = s_panel,
         .panel_io = io,
         .profile = {
-            .interface = ESP_LV_ADAPTER_PANEL_IF_SPI,
+            .interface = ESP_LV_ADAPTER_PANEL_IF_OTHER,
             .rotation = ESP_LV_ADAPTER_ROTATE_0,
             .hor_res = LCD_RES,
             .ver_res = LCD_RES,
