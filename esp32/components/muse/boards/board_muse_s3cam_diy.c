@@ -34,7 +34,6 @@
 #include "esp_lcd_panel_ops.h"
 #include "esp_lcd_panel_vendor.h"
 #include "esp_log.h"
-#include "esp_heap_caps.h"
 #include "esp_lv_adapter.h"
 #include "esp_sleep.h"
 #include "freertos/FreeRTOS.h"
@@ -156,18 +155,6 @@ static lv_display_t *display_start(lv_indev_t **touch)
     lv_display_t *disp = esp_lv_adapter_register_display(&disp_cfg);
     if (!disp || esp_lv_adapter_start() != ESP_OK) {
         return NULL;
-    }
-    /* DIAGNOSTIC: Fill screen red. If it stays red, LVGL is not drawing.
-     * If it turns gray, LVGL IS drawing (but UI has no visible content). */
-    {
-        uint16_t *red = (uint16_t *)heap_caps_malloc(240 * 20 * 2, MALLOC_CAP_DMA | MALLOC_CAP_INTERNAL);
-        if (red) {
-            for (int i = 0; i < 240 * 20; i++) red[i] = 0xF800; /* red in RGB565 */
-            for (int y = 0; y < 240; y += 20) {
-                esp_lcd_panel_draw_bitmap(s_panel, 0, y, 240, y + 20, red);
-            }
-            heap_caps_free(red);
-        }
     }
     return disp;
 }
