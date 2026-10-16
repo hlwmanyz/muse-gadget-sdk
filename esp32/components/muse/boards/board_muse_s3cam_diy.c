@@ -35,10 +35,10 @@
 #include "esp_lcd_panel_vendor.h"
 #include "esp_log.h"
 #include "lvgl.h"
-#include "freertos/semphr.h"
 #include "esp_sleep.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "freertos/semphr.h"
 
 #include "muse_audio.h"
 #include "muse_board.h"
