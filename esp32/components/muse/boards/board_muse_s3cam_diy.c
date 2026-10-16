@@ -34,11 +34,10 @@
 #include "esp_lcd_panel_ops.h"
 #include "esp_lcd_panel_vendor.h"
 #include "esp_log.h"
-#include "lvgl.h"
 #include "esp_heap_caps.h"
+#include "esp_lv_adapter.h"
 #include "esp_sleep.h"
 #include "freertos/FreeRTOS.h"
-#include "freertos/semphr.h"
 #include "freertos/task.h"
 
 #include "muse_audio.h"
@@ -69,44 +68,11 @@ static const char *TAG = "board";
 #define TALK_GPIO GPIO_NUM_0      /* BOOT button */
 
 static esp_lcd_panel_handle_t s_panel;
-static SemaphoreHandle_t s_lvgl_mutex = NULL;
-static volatile bool s_lvgl_paused = false;
-static TaskHandle_t s_lvgl_task = NULL;
 static muse_gpio_button_t s_talk;
 
 static esp_err_t init(void)
 {
     return muse_gpio_button_init(&s_talk, TALK_GPIO);
-}
-
-/* Byte-swap flush: replicates xiaozhi lvgl_port swap_bytes=1. */
-static void s3cam_flush_cb(lv_display_t *disp, const lv_area_t *area, uint8_t *px_map)
-{
-    uint16_t *px = (uint16_t *)px_map;
-    int32_t w = area->x2 - area->x1 + 1;
-    int32_t h = area->y2 - area->y1 + 1;
-    int32_t n = w * h;
-    for (int32_t i = 0; i < n; i++) {
-        uint16_t v = px[i];
-        px[i] = (uint16_t)((v << 8) | (v >> 8));
-    }
-    esp_lcd_panel_draw_bitmap(s_panel, area->x1, area->y1, area->x2 + 1, area->y2 + 1, px_map);
-    lv_display_flush_ready(disp);
-}
-
-static void s3cam_lvgl_task(void *arg)
-{
-    (void)arg;
-    const TickType_t delay = pdMS_TO_TICKS(10);
-    while (1) {
-        if (!s_lvgl_paused) {
-            if (xSemaphoreTake(s_lvgl_mutex, portMAX_DELAY) == pdTRUE) {
-                lv_timer_handler();
-                xSemaphoreGive(s_lvgl_mutex);
-            }
-        }
-        vTaskDelay(delay);
-    }
 }
 
 static lv_display_t *display_start(lv_indev_t **touch)
@@ -167,46 +133,48 @@ static lv_display_t *display_start(lv_indev_t **touch)
     esp_lcd_panel_invert_color(s_panel, true); /* bread-compact-wifi-s3cam */
     esp_lcd_panel_disp_on_off(s_panel, true);
 
-    /* Manual LVGL setup, replicating xiaozhi lvgl_port (swap_bytes=1). */
-    lv_init();
-    s_lvgl_mutex = xSemaphoreCreateMutex();
-    if (!s_lvgl_mutex) {
+    esp_lv_adapter_config_t adapter_cfg = ESP_LV_ADAPTER_DEFAULT_CONFIG();
+    adapter_cfg.task_core_id = MUSE_UI_CORE;
+    adapter_cfg.task_priority = MUSE_UI_PRIORITY;
+    if (esp_lv_adapter_init(&adapter_cfg) != ESP_OK) {
         return NULL;
     }
-    lv_display_t *disp = lv_display_create(LCD_RES, LCD_RES);
-    if (!disp) {
+    const esp_lv_adapter_display_config_t disp_cfg = {
+        .panel = s_panel,
+        .panel_io = io,
+        .profile = {
+            .interface = ESP_LV_ADAPTER_PANEL_IF_OTHER,
+            .rotation = ESP_LV_ADAPTER_ROTATE_0,
+            .hor_res = LCD_RES,
+            .ver_res = LCD_RES,
+            .buffer_height = 20,
+            .use_psram = false,
+            .require_double_buffer = false,
+        },
+        .tear_avoid_mode = ESP_LV_ADAPTER_TEAR_AVOID_MODE_NONE,
+    };
+    lv_display_t *disp = esp_lv_adapter_register_display(&disp_cfg);
+    if (!disp || esp_lv_adapter_start() != ESP_OK) {
         return NULL;
     }
-    /* 20-line buffer in DMA-capable internal RAM, like xiaozhi. */
-    size_t buf_sz = (size_t)LCD_RES * 20 * sizeof(uint16_t);
-    uint8_t *buf1 = (uint8_t *)heap_caps_malloc(buf_sz, MALLOC_CAP_DMA | MALLOC_CAP_INTERNAL);
-    if (!buf1) {
-        return NULL;
-    }
-    lv_display_set_draw_buffers(disp, buf1, NULL, buf_sz, LV_DISPLAY_RENDER_MODE_PARTIAL);
-    lv_display_set_flush_cb(disp, s3cam_flush_cb);
-    /* LVGL task on core 1. */
-    if (xTaskCreatePinnedToCore(s3cam_lvgl_task, "s3cam_lvgl", 4096, NULL,
-                                5, &s_lvgl_task, 1) != pdPASS) {
-        return NULL;
+    /* DIAGNOSTIC: Fill screen red. If it stays red, LVGL is not drawing.
+     * If it turns gray, LVGL IS drawing (but UI has no visible content). */
+    {
+        uint16_t *red = (uint16_t *)heap_caps_malloc(240 * 20 * 2, MALLOC_CAP_DMA | MALLOC_CAP_INTERNAL);
+        if (red) {
+            for (int i = 0; i < 240 * 20; i++) red[i] = 0xF800; /* red in RGB565 */
+            for (int y = 0; y < 240; y += 20) {
+                esp_lcd_panel_draw_bitmap(s_panel, 0, y, 240, y + 20, red);
+            }
+            heap_caps_free(red);
+        }
     }
     return disp;
 }
 
 static bool display_lock(int timeout_ms)
 {
-    if (!s_lvgl_mutex) {
-        return false;
-    }
-    TickType_t ticks = timeout_ms < 0 ? portMAX_DELAY : pdMS_TO_TICKS((uint32_t)timeout_ms);
-    return xSemaphoreTake(s_lvgl_mutex, ticks) == pdTRUE;
-}
-
-static void display_unlock(void)
-{
-    if (s_lvgl_mutex) {
-        xSemaphoreGive(s_lvgl_mutex);
-    }
+    return esp_lv_adapter_lock(timeout_ms) == ESP_OK;
 }
 
 static void set_brightness(int pct)
@@ -222,7 +190,11 @@ static void panel_sleep(bool sleep)
 
 static void display_pause(bool pause)
 {
-    s_lvgl_paused = pause;
+    if (pause) {
+        esp_lv_adapter_pause(-1);
+    } else {
+        esp_lv_adapter_resume();
+    }
 }
 
 /*
@@ -326,7 +298,7 @@ static const muse_board_t s_board = {
     .init = init,
     .display_start = display_start,
     .display_lock = display_lock,
-    .display_unlock = display_unlock,
+    .display_unlock = esp_lv_adapter_unlock,
     .set_brightness = set_brightness,
     .panel_sleep = panel_sleep,
     .display_pause = display_pause,
