@@ -80,6 +80,13 @@ static esp_err_t init(void)
 
 static void s3cam_flush_cb(lv_display_t *disp, const lv_area_t *area, uint8_t *px_map)
 {
+    /* Byte swap (xiaozhi swap_bytes=1) */
+    uint16_t *px = (uint16_t *)px_map;
+    int32_t n = (area->x2 - area->x1 + 1) * (area->y2 - area->y1 + 1);
+    for (int32_t i = 0; i < n; i++) {
+        uint16_t v = px[i];
+        px[i] = (uint16_t)((v << 8) | (v >> 8));
+    }
     esp_lcd_panel_draw_bitmap(s_panel, area->x1, area->y1, area->x2 + 1, area->y2 + 1, px_map);
     lv_display_flush_ready(disp);
 }
