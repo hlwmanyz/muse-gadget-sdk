@@ -157,10 +157,9 @@ static lv_display_t *display_start(lv_indev_t **touch)
     if (!s_lvgl_mutex) return NULL;
     lv_display_t *disp = lv_display_create(LCD_RES, LCD_RES);
     if (!disp) return NULL;
-    size_t buf_sz = (size_t)LCD_RES * 20 * 2;
-    uint8_t *buf1 = (uint8_t *)malloc(buf_sz);
+    lv_draw_buf_t *buf1 = lv_draw_buf_create(LCD_RES, 20, LV_COLOR_FORMAT_RGB565, LCD_RES * 2);
     if (!buf1) return NULL;
-    lv_display_set_draw_buffers(disp, buf1, NULL, buf_sz, LV_DISPLAY_RENDER_MODE_PARTIAL);
+    lv_display_set_draw_buffers(disp, buf1, NULL);
     lv_display_set_flush_cb(disp, s3cam_flush_cb);
     if (xTaskCreatePinnedToCore(s3cam_lvgl_task, "lvgl", 4096, NULL, 5, &s_lvgl_task, 1) != pdPASS) {
         return NULL;
