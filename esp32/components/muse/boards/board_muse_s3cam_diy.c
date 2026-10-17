@@ -178,6 +178,7 @@ static lv_display_t *display_start(lv_indev_t **touch)
     uint32_t data_size = stride * 20;
     void *buf_data = heap_caps_malloc(data_size, MALLOC_CAP_DMA | MALLOC_CAP_INTERNAL);
     if (!buf_data) return NULL;
+    memset(buf_data, 0, data_size);
     lv_draw_buf_init(&s_draw_buf, LCD_RES, 20, LV_COLOR_FORMAT_RGB565, stride, buf_data, data_size);
     lv_display_set_draw_buffers(disp, &s_draw_buf, NULL);
 
