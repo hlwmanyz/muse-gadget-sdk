@@ -157,6 +157,8 @@ static lv_display_t *display_start(lv_indev_t **touch)
     if (!disp || esp_lv_adapter_start() != ESP_OK) {
         return NULL;
     }
+    /* Make this the default display for lv_screen_active() */
+    lv_display_set_default(disp);
     /* Override flush with byte-swap version (xiaozhi swap_bytes=1) */
     lv_display_set_flush_cb(disp, s3cam_flush_cb);
     return disp;
