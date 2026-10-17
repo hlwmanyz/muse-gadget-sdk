@@ -35,6 +35,7 @@
 #include "esp_lcd_panel_vendor.h"
 #include "esp_log.h"
 #include "lvgl.h"
+#include "esp_heap_caps.h"
 #include "esp_sleep.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -80,6 +81,7 @@ static esp_err_t init(void)
 
 static void s3cam_flush_cb(lv_display_t *disp, const lv_area_t *area, uint8_t *px_map)
 {
+    /* Byte swap (xiaozhi swap_bytes=1) */
     uint16_t *px = (uint16_t *)px_map;
     int32_t n = (area->x2 - area->x1 + 1) * (area->y2 - area->y1 + 1);
     for (int32_t i = 0; i < n; i++) {
@@ -93,8 +95,8 @@ static void s3cam_lvgl_task(void *arg)
 {
     (void)arg;
     while (1) {
-        lv_tick_inc(10);
         if (!s_lvgl_paused && xSemaphoreTake(s_lvgl_mutex, portMAX_DELAY) == pdTRUE) {
+            lv_tick_inc(10);
             lv_timer_handler();
             xSemaphoreGive(s_lvgl_mutex);
         }
@@ -164,9 +166,16 @@ static lv_display_t *display_start(lv_indev_t **touch)
     if (!s_lvgl_mutex) return NULL;
     lv_display_t *disp = lv_display_create(LCD_RES, LCD_RES);
     if (!disp) return NULL;
-    lv_draw_buf_t *buf1 = lv_draw_buf_create(LCD_RES, 20, LV_COLOR_FORMAT_RGB565, LCD_RES * 2);
-    if (!buf1) return NULL;
-    lv_display_set_draw_buffers(disp, buf1, NULL);
+    /* Allocate draw buffer in DMA-capable internal RAM */
+    static lv_draw_buf_t s_draw_buf;
+static lv_draw_buf_t s_draw_buf2;
+    uint32_t stride = LCD_RES * 2;
+    uint32_t data_size = stride * 20;
+    void *buf_data = heap_caps_malloc(data_size, MALLOC_CAP_DMA | MALLOC_CAP_INTERNAL);
+    if (!buf_data) return NULL;
+    lv_draw_buf_init(&s_draw_buf, LCD_RES, 20, LV_COLOR_FORMAT_RGB565, stride, buf_data, data_size);
+    lv_draw_buf_init(&s_draw_buf2, LCD_RES, 20, LV_COLOR_FORMAT_RGB565, stride, buf_data2, data_size);
+    lv_display_set_draw_buffers(disp, &s_draw_buf, &s_draw_buf2);
     lv_display_set_flush_cb(disp, s3cam_flush_cb);
     if (xTaskCreatePinnedToCore(s3cam_lvgl_task, "lvgl", 4096, NULL, 5, &s_lvgl_task, 1) != pdPASS) {
         return NULL;
