@@ -158,7 +158,7 @@ static lv_display_t *display_start(lv_indev_t **touch)
     }
     esp_lcd_panel_reset(s_panel);
     esp_lcd_panel_init(s_panel);
-    esp_lcd_panel_invert_color(s_panel, true); /* bread-compact-wifi-s3cam */
+    esp_lcd_panel_invert_color(s_panel, false); /* try non-inverted per user */
     esp_lcd_panel_disp_on_off(s_panel, true);
 
     lv_init();
@@ -168,14 +168,12 @@ static lv_display_t *display_start(lv_indev_t **touch)
     if (!disp) return NULL;
     /* Allocate draw buffer in DMA-capable internal RAM */
     static lv_draw_buf_t s_draw_buf;
-static lv_draw_buf_t s_draw_buf2;
     uint32_t stride = LCD_RES * 2;
     uint32_t data_size = stride * 20;
     void *buf_data = heap_caps_malloc(data_size, MALLOC_CAP_DMA | MALLOC_CAP_INTERNAL);
     if (!buf_data) return NULL;
     lv_draw_buf_init(&s_draw_buf, LCD_RES, 20, LV_COLOR_FORMAT_RGB565, stride, buf_data, data_size);
-    lv_draw_buf_init(&s_draw_buf2, LCD_RES, 20, LV_COLOR_FORMAT_RGB565, stride, buf_data2, data_size);
-    lv_display_set_draw_buffers(disp, &s_draw_buf, &s_draw_buf2);
+    lv_display_set_draw_buffers(disp, &s_draw_buf, NULL);
     lv_display_set_flush_cb(disp, s3cam_flush_cb);
     if (xTaskCreatePinnedToCore(s3cam_lvgl_task, "lvgl", 4096, NULL, 5, &s_lvgl_task, 1) != pdPASS) {
         return NULL;
