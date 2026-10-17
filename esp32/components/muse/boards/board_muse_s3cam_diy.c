@@ -174,10 +174,10 @@ static lv_display_t *display_start(lv_indev_t **touch)
     /* Allocate draw buffer in DMA-capable internal RAM */
     static lv_draw_buf_t s_draw_buf;
     uint32_t stride = LCD_RES * 2;
-    uint32_t data_size = stride * 20;
+    uint32_t data_size = stride * LCD_RES;
     void *buf_data = heap_caps_malloc(data_size, MALLOC_CAP_DMA | MALLOC_CAP_INTERNAL);
     if (!buf_data) return NULL;
-    lv_draw_buf_init(&s_draw_buf, LCD_RES, 20, LV_COLOR_FORMAT_RGB565, stride, buf_data, data_size);
+    lv_draw_buf_init(&s_draw_buf, LCD_RES, LCD_RES, LV_COLOR_FORMAT_RGB565, stride, buf_data, data_size);
     lv_display_set_draw_buffers(disp, &s_draw_buf, NULL);
 
     lv_display_set_flush_cb(disp, s3cam_flush_cb);
