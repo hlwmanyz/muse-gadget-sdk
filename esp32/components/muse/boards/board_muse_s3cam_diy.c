@@ -79,9 +79,17 @@ static esp_err_t init(void)
     return muse_gpio_button_init(&s_talk, TALK_GPIO);
 }
 
+static uint16_t *s_bounce_buf = NULL;
 static void s3cam_flush_cb(lv_display_t *disp, const lv_area_t *area, uint8_t *px_map)
 {
-    esp_lcd_panel_draw_bitmap(s_panel, area->x1, area->y1, area->x2 + 1, area->y2 + 1, px_map);
+    /* Byte swap into bounce buffer (don't modify LVGL's buffer in-place) */
+    uint16_t *src = (uint16_t *)px_map;
+    int32_t n = (area->x2 - area->x1 + 1) * (area->y2 - area->y1 + 1);
+    for (int32_t i = 0; i < n; i++) {
+        uint16_t v = src[i];
+        s_bounce_buf[i] = (uint16_t)((v << 8) | (v >> 8));
+    }
+    esp_lcd_panel_draw_bitmap(s_panel, area->x1, area->y1, area->x2 + 1, area->y2 + 1, s_bounce_buf);
     lv_display_flush_ready(disp);
 }
 static void s3cam_lvgl_task(void *arg)
@@ -167,6 +175,8 @@ static lv_display_t *display_start(lv_indev_t **touch)
     if (!buf_data) return NULL;
     lv_draw_buf_init(&s_draw_buf, LCD_RES, 20, LV_COLOR_FORMAT_RGB565, stride, buf_data, data_size);
     lv_display_set_draw_buffers(disp, &s_draw_buf, NULL);
+    s_bounce_buf = (uint16_t *)heap_caps_malloc(stride * 20, MALLOC_CAP_DMA | MALLOC_CAP_INTERNAL);
+    if (!s_bounce_buf) return NULL;
     lv_display_set_flush_cb(disp, s3cam_flush_cb);
     if (xTaskCreatePinnedToCore(s3cam_lvgl_task, "lvgl", 4096, NULL, 5, &s_lvgl_task, 1) != pdPASS) {
         return NULL;
