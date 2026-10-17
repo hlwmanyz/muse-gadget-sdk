@@ -171,6 +171,7 @@ static lv_display_t *display_start(lv_indev_t **touch)
     if (!s_lvgl_mutex) return NULL;
     lv_display_t *disp = lv_display_create(LCD_RES, LCD_RES);
     if (!disp) return NULL;
+    lv_display_set_color_format(disp, LV_COLOR_FORMAT_RGB565);
     /* Allocate draw buffer in DMA-capable internal RAM */
     static lv_draw_buf_t s_draw_buf;
     uint32_t stride = LCD_RES * 2;
