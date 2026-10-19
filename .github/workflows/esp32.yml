@@ -122,9 +122,7 @@ jobs:
           DEFAULTS: sdkconfig.defaults${{ matrix.overlays }}
         run: |
           . "$IDF_PATH/export.sh" > /dev/null
-       if [ -n "${{ secrets.MUSE_SDK_TOKEN }}" ]; then
-          echo "CONFIG_GADGET_SDK_TOKEN=\"${{ secrets.MUSE_SDK_TOKEN }}\"" >> sdkconfig.defaults
-        fi
+          [ -n "${{ secrets.MUSE_SDK_TOKEN }}" ] && echo "CONFIG_GADGET_SDK_TOKEN=\"${{ secrets.MUSE_SDK_TOKEN }}\"" >> sdkconfig.defaults
           idf.py -B build -DIDF_TARGET="$TARGET" -DSDKCONFIG=build/sdkconfig \
             -DSDKCONFIG_DEFAULTS="$DEFAULTS" build
 
