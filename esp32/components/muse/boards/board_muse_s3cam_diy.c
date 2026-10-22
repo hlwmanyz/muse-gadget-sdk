@@ -40,6 +40,7 @@
 #include "driver/i2s_std.h"
 #include "driver/ledc.h"
 #include "driver/spi_master.h"
+#include "driver/uart.h"
 #include "esp_check.h"
 #include "esp_codec_dev.h"
 #include "driver/gpio.h"
@@ -258,6 +259,19 @@ static int32_t s_mic_dc[2];            /* each slot's zero level, x256 */
 
 static esp_err_t init(void)
 {
+    /* The console is UART0 behind the board's USB-UART bridge (TX GPIO43,
+     * RX GPIO44, the S3 defaults). The console driver installs without
+     * touching the pin matrix, so assert the routing here at board
+     * bring-up: with the RX pin routed elsewhere the console still prints
+     * (TX keeps its own default) but never hears a byte, and the web
+     * flasher's SDK-token send goes exactly as silently unanswered as it
+     * did on this board. Also log whether the UART driver already exists
+     * this early; the console reader installs it later, in muse_input. */
+    ESP_LOGI(TAG, "console: UART0 driver %s at board init",
+             uart_is_driver_installed(UART_NUM_0) ? "installed" : "not installed");
+    ESP_RETURN_ON_ERROR(uart_set_pin(UART_NUM_0, GPIO_NUM_43, GPIO_NUM_44,
+                                     UART_PIN_NO_CHANGE, UART_PIN_NO_CHANGE),
+                        TAG, "console UART pins");
     ESP_RETURN_ON_ERROR(muse_gpio_button_init(&s_talk, TALK_GPIO), TAG, "talk button");
     /* Held at reset to get here from the bootloader; don't count that as a press. */
     s_talk.pressed = gpio_get_level(TALK_GPIO) == 0;
@@ -399,6 +413,10 @@ static void rebuild_task(void *arg)
 {
     (void)arg;
     vTaskDelay(pdMS_TO_TICKS(3000));
+    /* By now muse_input has started: its console reader must have installed
+     * the UART0 driver, or the console hears nothing (see init). */
+    ESP_LOGI(TAG, "console: UART0 driver %s at rebuild",
+             uart_is_driver_installed(UART_NUM_0) ? "installed" : "not installed");
     if (!display_lock(-1)) {
         vTaskDelete(NULL);
         return;
