@@ -201,25 +201,48 @@ static esp_err_t panel_raw_init(void)
     return ESP_OK;
 }
 
+static volatile uint32_t s_flush_count;
+static volatile uint32_t s_flush_rc_fail;
+
 static void lv_flush_cb(lv_display_t *disp, const lv_area_t *area, uint8_t *px_map)
 {
-    uint16_t *px = (uint16_t *)px_map;
+    const uint16_t *px = (const uint16_t *)px_map;
     const int w = area->x2 - area->x1 + 1;
     const int h = area->y2 - area->y1 + 1;
-    const int n = w * h;
-    for (int i = 0; i < n; i++) {
-        px[i] = (uint16_t)((px[i] >> 8) | (px[i] << 8));
-    }
-    /* Polling transfers are synchronous: when raw_tx returns, the pixels
-     * are in GRAM and the buffer is free again. */
+    uint16_t mn = 0xFFFF, mx = 0;
+    /* LVGL's draw buffers live in PSRAM (internal RAM is reserved for the
+     * I2S DMA: with internal draw buffers the speaker's DMA descriptors
+     * failed to allocate and the voice pipeline died). Each slice is
+     * byte-swapped into the internal staging buffer, then transmitted. */
     int done_rows = 0;
     while (done_rows < h) {
         const int slice = h - done_rows > 32 ? 32 : h - done_rows;
+        const uint16_t *srcp = px + done_rows * w;
+        for (int i = 0; i < w * slice; i++) {
+            const uint16_t v = srcp[i];
+            if (v < mn) {
+                mn = v;
+            }
+            if (v > mx) {
+                mx = v;
+            }
+            s_stage[i] = (uint16_t)((v >> 8) | (v << 8));
+        }
         if (raw_window(area->x1, area->y1 + done_rows, area->x2,
                        area->y1 + done_rows + slice - 1) == ESP_OK) {
-            raw_tx(px + done_rows * w, (size_t)w * slice * sizeof(uint16_t), 1);
+            if (raw_tx(s_stage, (size_t)w * slice * sizeof(uint16_t), 1) != ESP_OK) {
+                s_flush_rc_fail++;
+            }
+        } else {
+            s_flush_rc_fail++;
         }
         done_rows += slice;
+    }
+    s_flush_count++;
+    if (s_flush_count <= 10 || s_flush_count % 100 == 0) {
+        ESP_LOGI(TAG, "flush #%lu area %d,%d-%d,%d px min=%04x max=%04x rc_fail=%lu",
+                 (unsigned long)s_flush_count, area->x1, area->y1, area->x2,
+                 area->y2, mn, mx, (unsigned long)s_flush_rc_fail);
     }
     lv_display_flush_ready(disp);
 }
@@ -260,6 +283,10 @@ static esp_err_t init(void)
     s_talk.pressed = gpio_get_level(TALK_GPIO) == 0;
     return ESP_OK;
 }
+
+static bool display_lock(int timeout_ms);
+static void display_unlock(void);
+static void sentinel_task(void *arg);
 
 static lv_display_t *display_start(lv_indev_t **touch)
 {
@@ -324,8 +351,8 @@ static lv_display_t *display_start(lv_indev_t **touch)
     lv_display_set_default(disp);
     lv_display_set_color_format(disp, LV_COLOR_FORMAT_RGB565);
     const size_t buf_bytes = LCD_W * DRAW_BUF_LINES * sizeof(uint16_t);
-    void *buf1 = heap_caps_malloc(buf_bytes, MALLOC_CAP_INTERNAL | MALLOC_CAP_DMA);
-    void *buf2 = heap_caps_malloc(buf_bytes, MALLOC_CAP_INTERNAL | MALLOC_CAP_DMA);
+    void *buf1 = heap_caps_malloc(buf_bytes, MALLOC_CAP_SPIRAM);
+    void *buf2 = heap_caps_malloc(buf_bytes, MALLOC_CAP_SPIRAM);
     if (!buf1 || !buf2) {
         return NULL;
     }
@@ -335,8 +362,9 @@ static lv_display_t *display_start(lv_indev_t **touch)
                                 NULL, MUSE_UI_CORE) != pdPASS) {
         return NULL;
     }
-    ESP_LOGI(TAG, "LVGL up (hand-rolled port): %dx%d, 2 x %d-line DMA buffers",
+    ESP_LOGI(TAG, "LVGL up (hand-rolled port): %dx%d, 2 x %d-line PSRAM buffers",
              LCD_W, LCD_H, DRAW_BUF_LINES);
+    xTaskCreate(sentinel_task, "sentinel", 4096, NULL, 5, NULL);
     return disp;
 }
 
@@ -354,6 +382,33 @@ static void display_unlock(void)
     if (s_lv_lock) {
         xSemaphoreGiveRecursive(s_lv_lock);
     }
+}
+
+/* One-shot diagnostic (remove with the flush counters once the UI is
+ * confirmed visible): 6 s after the display starts, paint the whole
+ * screen MAGENTA through the same raw path the bands used, hold 2 s,
+ * then invalidate the LVGL screen so the UI repaints over it. Magenta
+ * never appearing => the raw path is dead outside display_start.
+ * Magenta appearing but never repainted => LVGL flush is not running.
+ * Magenta replaced by grey again => flush runs and paints that grey:
+ * the content itself is the problem. */
+static void sentinel_task(void *arg)
+{
+    (void)arg;
+    vTaskDelay(pdMS_TO_TICKS(6000));
+    if (display_lock(-1)) {
+        const int fails = raw_fill_rows(0xF81F, 0, LCD_H - 1);
+        ESP_LOGI(TAG, "sentinel: magenta painted, fails=%d, flush_count=%lu rc_fail=%lu",
+                 fails, (unsigned long)s_flush_count, (unsigned long)s_flush_rc_fail);
+        display_unlock();
+    }
+    vTaskDelay(pdMS_TO_TICKS(2000));
+    if (display_lock(-1)) {
+        lv_obj_invalidate(lv_screen_active());
+        ESP_LOGI(TAG, "sentinel: screen invalidated; UI should repaint over magenta");
+        display_unlock();
+    }
+    vTaskDelete(NULL);
 }
 
 static void set_brightness(int pct)
