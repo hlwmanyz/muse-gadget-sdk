@@ -114,12 +114,18 @@ static bool IRAM_ATTR on_color_trans_done(esp_lcd_panel_io_handle_t io,
 
 /* Paint the 4 test bands straight through esp_lcd_panel_draw_bitmap,
  * bypassing LVGL entirely. Returns the number of failed draws. */
+static uint16_t *s_probe_buf;   /* static DMA buffer for direct panel probes */
+
 static int draw_band_tripwire(void)
 {
     static const uint16_t band_rgb565[] = { 0xF800, 0x07E0, 0x001F, 0xFFFF };
-    const int sub_h = 20;
-    uint16_t *px = heap_caps_malloc(LCD_W * sub_h * sizeof(uint16_t),
-                                    MALLOC_CAP_INTERNAL | MALLOC_CAP_DMA);
+    const int sub_h = 32;
+    uint16_t *px = s_probe_buf;
+    bool borrowed = px != NULL;
+    if (!px) {
+        px = heap_caps_malloc(LCD_W * sub_h * sizeof(uint16_t),
+                              MALLOC_CAP_INTERNAL | MALLOC_CAP_DMA);
+    }
     if (!px) {
         ESP_LOGW(TAG, "band tripwire skipped: no DMA buffer");
         return -1;
@@ -137,7 +143,29 @@ static int draw_band_tripwire(void)
             }
         }
     }
-    heap_caps_free(px);
+    if (!borrowed) {
+        heap_caps_free(px);
+    }
+    return fails;
+}
+
+/* Full-screen solid colour via direct panel writes (probe buffer chunks).
+ * Caller holds the display lock. Returns the number of failed draws. */
+static int draw_solid(uint16_t v)
+{
+    if (!s_probe_buf) {
+        return -1;
+    }
+    const uint16_t be = (uint16_t)((v >> 8) | (v << 8));
+    for (int i = 0; i < LCD_W * 32; i++) {
+        s_probe_buf[i] = be;
+    }
+    int fails = 0;
+    for (int y = 0; y < LCD_H; y += 32) {
+        if (esp_lcd_panel_draw_bitmap(s_panel, 0, y, LCD_W, y + 32, s_probe_buf) != ESP_OK) {
+            fails++;
+        }
+    }
     return fails;
 }
 
@@ -183,7 +211,6 @@ static void lv_task(void *arg)
     (void)arg;
     const int64_t start_us = esp_timer_get_time();
     int64_t last_hb_us = start_us;
-    bool tripwire_done = false;
     for (;;) {
         uint32_t wait_ms = 50;
         if (!s_lv_paused && xSemaphoreTakeRecursive(s_lv_lock, portMAX_DELAY) == pdTRUE) {
@@ -191,24 +218,6 @@ static void lv_task(void *arg)
             xSemaphoreGiveRecursive(s_lv_lock);
         }
         const int64_t now_us = esp_timer_get_time();
-        if (!tripwire_done && now_us - start_us > 20 * 1000 * 1000) {
-            /* Post-UI tripwire: 20 s after LVGL starts, pause it and paint
-             * the bands directly again. Bands visible => the panel path is
-             * still alive under the full app and only the LVGL frames are
-             * wrong; no bands => something after boot kills the path. */
-            tripwire_done = true;
-            s_lv_paused = true;
-            vTaskDelay(pdMS_TO_TICKS(300));
-            const int fails = draw_band_tripwire();
-            ESP_LOGI(TAG, "post-UI band tripwire drawn (fails=%d); LVGL paused 10 s", fails);
-            vTaskDelay(pdMS_TO_TICKS(10000));
-            s_lv_paused = false;
-            if (s_disp && xSemaphoreTakeRecursive(s_lv_lock, portMAX_DELAY) == pdTRUE) {
-                lv_obj_invalidate(lv_screen_active());
-                xSemaphoreGiveRecursive(s_lv_lock);
-            }
-            ESP_LOGI(TAG, "post-UI band tripwire over; LVGL resumed");
-        }
         if (now_us - last_hb_us > 10 * 1000 * 1000) {
             last_hb_us = now_us;
             ESP_LOGI(TAG, "lvgl hb: flushes=%lu", (unsigned long)s_flush_count);
@@ -234,6 +243,9 @@ static esp_err_t init(void)
     s_talk.pressed = gpio_get_level(TALK_GPIO) == 0;
     return ESP_OK;
 }
+
+static void probe_task(void *arg);
+static void set_brightness(int pct);
 
 static lv_display_t *display_start(lv_indev_t **touch)
 {
@@ -355,10 +367,16 @@ static lv_display_t *display_start(lv_indev_t **touch)
     }
     lv_display_set_buffers(disp, buf1, buf2, buf_bytes, LV_DISPLAY_RENDER_MODE_PARTIAL);
     lv_display_set_flush_cb(disp, lv_flush_cb);
+    if (!s_probe_buf) {
+        s_probe_buf = heap_caps_malloc(LCD_W * 32 * sizeof(uint16_t),
+                                       MALLOC_CAP_INTERNAL | MALLOC_CAP_DMA);
+    }
     if (xTaskCreatePinnedToCore(lv_task, "lvgl", 12288, NULL, MUSE_UI_PRIORITY,
                                 NULL, MUSE_UI_CORE) != pdPASS) {
         return NULL;
     }
+    xTaskCreatePinnedToCore(probe_task, "probe", 4096, NULL, MUSE_UI_PRIORITY,
+                            NULL, MUSE_UI_CORE);
     ESP_LOGI(TAG, "LVGL up (hand-rolled port): %dx%d, 2 x %d-line DMA buffers",
              LCD_W, LCD_H, DRAW_BUF_LINES);
     return disp;
@@ -382,13 +400,59 @@ static void display_unlock(void)
 
 static void set_brightness(int pct)
 {
+    static int s_last_pct = -1;
+    if (pct != s_last_pct) {
+        ESP_LOGI(TAG, "brightness %d -> %d", s_last_pct, pct);
+        s_last_pct = pct;
+    }
     ledc_set_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0, pct * 1023 / 100);
     ledc_update_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0);
 }
 
 static void panel_sleep(bool sleep)
 {
+    ESP_LOGI(TAG, "panel_sleep(%s)", sleep ? "true" : "false");
     esp_lcd_panel_disp_sleep(s_panel, sleep);   /* SLPIN/SLPOUT; GRAM is kept */
+}
+
+/* Sentinel series: after LVGL is up, paint a different solid colour every
+ * few seconds via direct panel writes (display lock held, LVGL fenced
+ * out). Whichever colour the user last SAW brackets the moment the panel
+ * path dies. The final step first re-asserts display-on + brightness
+ * WITHOUT drawing: if old GRAM content flashes up, the panel had been
+ * switched off under us. */
+static void probe_task(void *arg)
+{
+    (void)arg;
+    static const struct { int at_s; uint16_t colour; const char *name; } steps[] = {
+        {  1, 0xF81F, "MAGENTA" },
+        {  5, 0x07FF, "CYAN" },
+        { 11, 0xFFE0, "YELLOW" },
+    };
+    int elapsed = 0;
+    for (size_t i = 0; i < sizeof(steps) / sizeof(steps[0]); i++) {
+        vTaskDelay(pdMS_TO_TICKS((steps[i].at_s - elapsed) * 1000));
+        elapsed = steps[i].at_s;
+        if (display_lock(-1)) {
+            const int fails = draw_solid(steps[i].colour);
+            ESP_LOGI(TAG, "probe @%ds: %s drawn (fails=%d)", steps[i].at_s,
+                     steps[i].name, fails);
+            vTaskDelay(pdMS_TO_TICKS(1200));
+            display_unlock();
+        }
+    }
+    vTaskDelay(pdMS_TO_TICKS((20 - elapsed) * 1000));
+    if (display_lock(-1)) {
+        esp_lcd_panel_disp_on_off(s_panel, true);
+        set_brightness(100);
+        ESP_LOGI(TAG, "probe @20s: display re-asserted (on + brightness 100), NO draw");
+        vTaskDelay(pdMS_TO_TICKS(2000));
+        const int fails = draw_solid(0xFFFF);
+        ESP_LOGI(TAG, "probe @20s: WHITE drawn (fails=%d)", fails);
+        vTaskDelay(pdMS_TO_TICKS(1200));
+        display_unlock();
+    }
+    vTaskDelete(NULL);
 }
 
 static void display_pause(bool pause)
