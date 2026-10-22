@@ -303,17 +303,9 @@ static lv_display_t *display_start(lv_indev_t **touch)
         return NULL;
     }
 
-    /* Boot bands on the raw path (kept as the power-on tell: if these
-     * show, the panel path is alive; LVGL paints over them in ~1 s). */
-    {
-        static const uint16_t band_rgb565[] = { 0xF800, 0x07E0, 0x001F, 0xFFFF };
-        int fails = 0;
-        for (int b = 0; b < 4; b++) {
-            fails += raw_fill_rows(band_rgb565[b], b * 80, (b + 1) * 80 - 1) != 0;
-        }
-        ESP_LOGI(TAG, "boot bands drawn (fails=%d), holding 0.5 s", fails);
-        vTaskDelay(pdMS_TO_TICKS(500));
-    }
+    /* Clear to black (no hold): a clean dark screen until the rebuilt
+     * stack paints the UI. The debug-era colour bands are gone. */
+    raw_fill_rows(0x0000, 0, LCD_H - 1);
 
     /* Hand-rolled LVGL bring-up (see the note above lv_flush_cb). */
     s_lv_lock = xSemaphoreCreateRecursiveMutex();
@@ -371,16 +363,16 @@ static void display_unlock(void)
 }
 
 /* The SPI bus created at display_start silently stops reaching the
- * panel within the first seconds of boot (the boot bands, painted at
- * ~1.4 s, are the last thing it ever delivers; every call still returns
+ * panel within the first seconds of boot (the black clear, painted at
+ * ~1 s, is the last thing it ever delivers; every call still returns
  * ESP_OK). The v12 layer-cake probe (2026-10-22) localized it to the
  * bus itself: re-initializing the panel (P2) and replacing the device
  * handle (P3) changed nothing, while freeing and re-initializing the
  * bus (P4) revived the path for good and LVGL has painted through it
- * ever since. So: 4 s after the display starts (past the measured
- * death window of ~1.5-3 s, with margin), rebuild the whole
+ * ever since. So: 3 s after the display starts (past the measured death
+ * window, which closes by ~3 s absolute), rebuild the whole
  * display stack once, under the display lock, and force a full LVGL
- * repaint. The screen is bands-then-blank until then, which the link
+ * repaint. The screen is black until then, which the link
  * setup outlasts anyway. */
 static void panel_hw_reset_and_init(void)
 {
@@ -406,7 +398,7 @@ static void panel_hw_reset_and_init(void)
 static void rebuild_task(void *arg)
 {
     (void)arg;
-    vTaskDelay(pdMS_TO_TICKS(4000));
+    vTaskDelay(pdMS_TO_TICKS(3000));
     if (!display_lock(-1)) {
         vTaskDelete(NULL);
         return;
