@@ -150,35 +150,60 @@ static lv_display_t *display_start(lv_indev_t **touch)
     if (esp_lcd_new_panel_st7789(io, &panel_cfg, &s_panel) != ESP_OK) {
         return NULL;
     }
-    esp_lcd_panel_reset(s_panel);
-    esp_lcd_panel_init(s_panel);
-    esp_lcd_panel_invert_color(s_panel, true);
+    esp_err_t rc_reset = esp_lcd_panel_reset(s_panel);
+    esp_err_t rc_init = esp_lcd_panel_init(s_panel);
+    esp_err_t rc_inv = esp_lcd_panel_invert_color(s_panel, true);
     esp_lcd_panel_swap_xy(s_panel, false);
     esp_lcd_panel_mirror(s_panel, false, false);
-    esp_lcd_panel_disp_on_off(s_panel, true);
+    esp_err_t rc_on = esp_lcd_panel_disp_on_off(s_panel, true);
+    ESP_LOGI(TAG, "panel bringup: reset=%s init=%s invert=%s on=%s",
+             esp_err_to_name(rc_reset), esp_err_to_name(rc_init),
+             esp_err_to_name(rc_inv), esp_err_to_name(rc_on));
+    /* The LCD sits on GPIO19/20, the S3's native USB D-/D+ pins. If a USB
+     * Serial/JTAG console (primary or the IDF-default secondary) is compiled
+     * in, it claims those pins and the panel hears nothing. Probe it. */
+#if CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG
+    ESP_LOGW(TAG, "console probe: PRIMARY USB Serial/JTAG console is ON");
+#endif
+#if CONFIG_ESP_CONSOLE_SECONDARY_USB_SERIAL_JTAG
+    ESP_LOGW(TAG, "console probe: SECONDARY USB Serial/JTAG console is ON");
+#endif
+#if CONFIG_ESP_CONSOLE_UART
+    ESP_LOGI(TAG, "console probe: UART console is ON (num %d)", CONFIG_ESP_CONSOLE_UART_NUM);
+#endif
 
-    /* One-shot panel bisection (2026-10-22, remove once the screen works):
-     * paint 4 horizontal bands straight through esp_lcd_panel_draw_bitmap,
-     * before LVGL starts. Bands visible => panel/SPI/driver path is good
-     * and the blank screen lives in the LVGL/adapter layer; no bands =>
-     * the fault is below LVGL despite init matching xiaozhi byte for byte. */
+    /* One-shot panel bisection v2 (2026-10-22, remove once the screen works):
+     * same 4 bands as v1 (which drew nothing visible in run #65), but issued
+     * as 20-line sub-draws like xiaozhi's flush / the 2026-10-15 per-line
+     * diagnostic that DID light this panel, every return code logged, and
+     * held 30 s so the pattern cannot be missed. */
     {
         static const uint16_t band_rgb565[] = { 0xF800, 0x07E0, 0x001F, 0xFFFF };
-        const int band_h = 80;
-        uint16_t *px = heap_caps_malloc(LCD_W * band_h * sizeof(uint16_t),
+        const int sub_h = 20;
+        uint16_t *px = heap_caps_malloc(LCD_W * sub_h * sizeof(uint16_t),
                                         MALLOC_CAP_INTERNAL | MALLOC_CAP_DMA);
         if (px) {
+            int fails = 0;
             for (int b = 0; b < 4; b++) {
                 const uint16_t v = band_rgb565[b];
                 const uint16_t be = (uint16_t)((v >> 8) | (v << 8));
-                for (int i = 0; i < LCD_W * band_h; i++) {
+                for (int i = 0; i < LCD_W * sub_h; i++) {
                     px[i] = be;
                 }
-                esp_lcd_panel_draw_bitmap(s_panel, 0, b * band_h, LCD_W,
-                                          (b + 1) * band_h, px);
+                for (int y = b * 80; y < (b + 1) * 80; y += sub_h) {
+                    esp_err_t rc = esp_lcd_panel_draw_bitmap(s_panel, 0, y, LCD_W,
+                                                             y + sub_h, px);
+                    if (rc != ESP_OK) {
+                        fails++;
+                        ESP_LOGW(TAG, "band draw y=%d rc=%s", y, esp_err_to_name(rc));
+                    }
+                }
             }
-            ESP_LOGI(TAG, "band test drawn, holding 3 s");
-            vTaskDelay(pdMS_TO_TICKS(3000));
+            ESP_LOGI(TAG, "band test v2 drawn (fails=%d), holding 30 s", fails);
+            for (int s = 30; s > 0; s -= 5) {
+                ESP_LOGI(TAG, "band test holding: %d s left", s);
+                vTaskDelay(pdMS_TO_TICKS(5000));
+            }
             heap_caps_free(px);
         } else {
             ESP_LOGW(TAG, "band test skipped: no DMA buffer");

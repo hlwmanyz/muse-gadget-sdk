@@ -53,3 +53,8 @@ CONFIG_ESP_WIFI_STATIC_TX_BUFFER_NUM=8
 # Single-button menu.
 CONFIG_LV_FONT_MONTSERRAT_12=y
 # Verified against upstream main 2026-10-13; triggers the first CI build for this board.
+
+# The LCD sits on the S3's USB pins (GPIO19/20). The IDF-default secondary
+# USB Serial/JTAG console would claim those pins and mute the panel, so it
+# must stay off for this board; the console is the CH340 UART0 above.
+# CONFIG_ESP_CONSOLE_SECONDARY_USB_SERIAL_JTAG is not set
