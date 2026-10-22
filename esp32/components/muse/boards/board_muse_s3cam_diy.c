@@ -151,7 +151,7 @@ static lv_display_t *display_start(lv_indev_t **touch)
     }
     esp_lcd_panel_reset(s_panel);
     esp_lcd_panel_init(s_panel);
-    esp_lcd_panel_invert_color(s_panel, false);
+    esp_lcd_panel_invert_color(s_panel, true);
     esp_lcd_panel_swap_xy(s_panel, false);
     esp_lcd_panel_mirror(s_panel, false, false);
     esp_lcd_panel_disp_on_off(s_panel, true);
