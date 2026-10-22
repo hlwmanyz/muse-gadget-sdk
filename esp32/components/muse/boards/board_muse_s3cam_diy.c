@@ -415,41 +415,39 @@ static void panel_sleep(bool sleep)
     esp_lcd_panel_disp_sleep(s_panel, sleep);   /* SLPIN/SLPOUT; GRAM is kept */
 }
 
-/* Sentinel series: after LVGL is up, paint a different solid colour every
- * few seconds via direct panel writes (display lock held, LVGL fenced
- * out). Whichever colour the user last SAW brackets the moment the panel
- * path dies. The final step first re-asserts display-on + brightness
- * WITHOUT drawing: if old GRAM content flashes up, the panel had been
- * switched off under us. */
+/* Wake-and-revive probe. The panel blanks to lit grey ~1 s after LVGL
+ * starts while every write reports success. At +8 s (display lock held):
+ *   1. SLPOUT + DISPON, NO draw: whatever GRAM still holds flashes up.
+ *      Bands => GRAM writes never landed after boot; UI/white => they
+ *      land but scan-out was off.
+ *   2. Full re-init (reset + init + invert + on), then MAGENTA: if this
+ *      shows, the panel had lost its init state (reset/brown-out).
+ *   3. CYAN with no further re-init: post-revive writes land normally. */
 static void probe_task(void *arg)
 {
     (void)arg;
-    static const struct { int at_s; uint16_t colour; const char *name; } steps[] = {
-        {  1, 0xF81F, "MAGENTA" },
-        {  5, 0x07FF, "CYAN" },
-        { 11, 0xFFE0, "YELLOW" },
-    };
-    int elapsed = 0;
-    for (size_t i = 0; i < sizeof(steps) / sizeof(steps[0]); i++) {
-        vTaskDelay(pdMS_TO_TICKS((steps[i].at_s - elapsed) * 1000));
-        elapsed = steps[i].at_s;
-        if (display_lock(-1)) {
-            const int fails = draw_solid(steps[i].colour);
-            ESP_LOGI(TAG, "probe @%ds: %s drawn (fails=%d)", steps[i].at_s,
-                     steps[i].name, fails);
-            vTaskDelay(pdMS_TO_TICKS(1200));
-            display_unlock();
-        }
-    }
-    vTaskDelay(pdMS_TO_TICKS((20 - elapsed) * 1000));
+    vTaskDelay(pdMS_TO_TICKS(8000));
     if (display_lock(-1)) {
+        esp_lcd_panel_disp_sleep(s_panel, false);
         esp_lcd_panel_disp_on_off(s_panel, true);
         set_brightness(100);
-        ESP_LOGI(TAG, "probe @20s: display re-asserted (on + brightness 100), NO draw");
-        vTaskDelay(pdMS_TO_TICKS(2000));
-        const int fails = draw_solid(0xFFFF);
-        ESP_LOGI(TAG, "probe @20s: WHITE drawn (fails=%d)", fails);
-        vTaskDelay(pdMS_TO_TICKS(1200));
+        ESP_LOGI(TAG, "probe @8s: SLPOUT+DISPON sent, NO draw (watch for old GRAM)");
+        vTaskDelay(pdMS_TO_TICKS(2500));
+        const esp_err_t rc_reset = esp_lcd_panel_reset(s_panel);
+        const esp_err_t rc_init = esp_lcd_panel_init(s_panel);
+        const esp_err_t rc_inv = esp_lcd_panel_invert_color(s_panel, true);
+        const esp_err_t rc_on = esp_lcd_panel_disp_on_off(s_panel, true);
+        const int fails_m = draw_solid(0xF81F);
+        ESP_LOGI(TAG, "probe @8s: re-init reset=%s init=%s inv=%s on=%s; MAGENTA drawn (fails=%d)",
+                 esp_err_to_name(rc_reset), esp_err_to_name(rc_init),
+                 esp_err_to_name(rc_inv), esp_err_to_name(rc_on), fails_m);
+        vTaskDelay(pdMS_TO_TICKS(2500));
+        const int fails_c = draw_solid(0x07FF);
+        ESP_LOGI(TAG, "probe @8s: CYAN drawn after re-init (fails=%d)", fails_c);
+        vTaskDelay(pdMS_TO_TICKS(2500));
+        if (s_disp) {
+            lv_obj_invalidate(lv_screen_active());
+        }
         display_unlock();
     }
     vTaskDelete(NULL);
