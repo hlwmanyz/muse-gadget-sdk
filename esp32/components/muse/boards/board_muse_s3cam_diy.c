@@ -157,6 +157,135 @@ static int raw_fill_rows(uint16_t v, int y1, int y2)
 
 static esp_err_t panel_raw_init(void)
 {
+    const spi_bus_config_t bus = {
+        .sclk_io_num = LCD_SCLK,
+        .mosi_io_num = LCD_MOSI,
+        .miso_io_num = GPIO_NUM_NC,
+        .quadwp_io_num = GPIO_NUM_NC,
+        .quadhd_io_num = GPIO_NUM_NC,
+        .max_transfer_sz = LCD_W * 32 * 2,
+    };
+    ESP_RETURN_ON_ERROR(spi_bus_initialize(LCD_HOST, &bus, SPI_DMA_CH_AUTO), TAG, "spi bus");
+    const spi_device_interface_config_t raw_cfg = {
+        .mode = 0,
+        .clock_speed_hz = 10 * 1000 * 1000,
+        .spics_io_num = LCD_CS,
+        .queue_size = 1,
+    };
+    ESP_RETURN_ON_ERROR(spi_bus_add_device(LCD_HOST, &raw_cfg, &s_raw_dev), TAG, "spi dev");
+    gpio_set_direction(LCD_DC, GPIO_MODE_OUTPUT);
+    gpio_set_direction(LCD_RST, GPIO_MODE_OUTPUT);
+    gpio_set_level(LCD_RST, 1);
+    vTaskDelay(pdMS_TO_TICKS(10));
+    gpio_set_level(LCD_RST, 0);
+    vTaskDelay(pdMS_TO_TICKS(10));
+    gpio_set_level(LCD_RST, 1);
+    vTaskDelay(pdMS_TO_TICKS(120));
+    ESP_RETURN_ON_ERROR(raw_cmd(0x01, NULL, 0), TAG, "swreset");
+    vTaskDelay(pdMS_TO_TICKS(150));
+    ESP_RETURN_ON_ERROR(raw_cmd(0x11, NULL, 0), TAG, "slpout");
+    vTaskDelay(pdMS_TO_TICKS(120));
+    static const uint8_t colmod[] = { 0x55 };   /* RGB565 */
+    raw_cmd(0x3A, colmod, sizeof(colmod));
+    static const uint8_t madctl[] = { 0x00 };
+    raw_cmd(0x36, madctl, sizeof(madctl));
+    raw_cmd(0x21, NULL, 0);   /* INVON: this panel wants inversion on */
+    raw_cmd(0x13, NULL, 0);   /* NORON */
+    raw_cmd(0x29, NULL, 0);   /* DISPON */
+    s_stage = heap_caps_malloc(LCD_W * 32 * sizeof(uint16_t),
+                               MALLOC_CAP_INTERNAL | MALLOC_CAP_DMA);
+    if (!s_stage) {
+        return ESP_ERR_NO_MEM;
+    }
+    ESP_LOGI(TAG, "panel up (raw SPI polling, 10 MHz)");
+    return ESP_OK;
+}
+
+static void lv_flush_cb(lv_display_t *disp, const lv_area_t *area, uint8_t *px_map)
+{
+    uint16_t *px = (uint16_t *)px_map;
+    const int w = area->x2 - area->x1 + 1;
+    const int h = area->y2 - area->y1 + 1;
+    const int n = w * h;
+    for (int i = 0; i < n; i++) {
+        px[i] = (uint16_t)((px[i] >> 8) | (px[i] << 8));
+    }
+    /* Polling transfers are synchronous: when raw_tx returns, the pixels
+     * are in GRAM and the buffer is free again. */
+    int done_rows = 0;
+    while (done_rows < h) {
+        const int slice = h - done_rows > 32 ? 32 : h - done_rows;
+        if (raw_window(area->x1, area->y1 + done_rows, area->x2,
+                       area->y1 + done_rows + slice - 1) == ESP_OK) {
+            raw_tx(px + done_rows * w, (size_t)w * slice * sizeof(uint16_t), 1);
+        }
+        done_rows += slice;
+    }
+    lv_display_flush_ready(disp);
+}
+
+static void lv_tick_cb(void *arg)
+{
+    (void)arg;
+    lv_tick_inc(10);
+}
+
+static void lv_task(void *arg)
+{
+    (void)arg;
+    for (;;) {
+        uint32_t wait_ms = 50;
+        if (!s_lv_paused && xSemaphoreTakeRecursive(s_lv_lock, portMAX_DELAY) == pdTRUE) {
+            wait_ms = lv_timer_handler();
+            xSemaphoreGiveRecursive(s_lv_lock);
+        }
+        if (wait_ms < 5) {
+            wait_ms = 5;
+        } else if (wait_ms > 50) {
+            wait_ms = 50;
+        }
+        vTaskDelay(pdMS_TO_TICKS(wait_ms));
+    }
+}
+
+static muse_gpio_button_t s_talk;
+static i2s_chan_handle_t s_tx, s_rx;
+static int s_mic_gain_q8 = 256;
+static int32_t s_mic_dc[2];            /* each slot's zero level, x256 */
+
+static esp_err_t init(void)
+{
+    ESP_RETURN_ON_ERROR(muse_gpio_button_init(&s_talk, TALK_GPIO), TAG, "talk button");
+    /* Held at reset to get here from the bootloader; don't count that as a press. */
+    s_talk.pressed = gpio_get_level(TALK_GPIO) == 0;
+    return ESP_OK;
+}
+
+static lv_display_t *display_start(lv_indev_t **touch)
+{
+    (void)touch;
+    const ledc_timer_config_t bl_timer = {
+        .speed_mode = LEDC_LOW_SPEED_MODE,
+        .duty_resolution = LEDC_TIMER_10_BIT,
+        .timer_num = LEDC_TIMER_0,
+        .freq_hz = 20000,
+        .clk_cfg = LEDC_AUTO_CLK,
+    };
+    const ledc_channel_config_t bl_ch = {
+        .gpio_num = LCD_BL,
+        .speed_mode = LEDC_LOW_SPEED_MODE,
+        .channel = LEDC_CHANNEL_0,
+        .timer_sel = LEDC_TIMER_0,
+        .duty = 0,
+    };
+    if (ledc_timer_config(&bl_timer) != ESP_OK || ledc_channel_config(&bl_ch) != ESP_OK) {
+        return NULL;
+    }
+    /* Backlight fully on from the start (the channel config leaves duty 0);
+     * muse_ui manages brightness from here via set_brightness(). */
+    ledc_set_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0, 1023);
+    ledc_update_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0);
+
     if (panel_raw_init() != ESP_OK) {
         return NULL;
     }
