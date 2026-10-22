@@ -55,6 +55,10 @@ CONFIG_LV_FONT_MONTSERRAT_12=y
 # Verified against upstream main 2026-10-13; triggers the first CI build for this board.
 
 # The LCD sits on the S3's USB pins (GPIO19/20). The IDF-default secondary
-# USB Serial/JTAG console would claim those pins and mute the panel, so it
-# must stay off for this board; the console is the CH340 UART0 above.
-# CONFIG_ESP_CONSOLE_SECONDARY_USB_SERIAL_JTAG is not set
+# USB Serial/JTAG console claims those pins for the USB PHY once it starts
+# and silently mutes the panel (proven 2026-10-22: bands painted in the
+# first seconds are the last thing the panel ever hears). Select NONE
+# explicitly: a bare "# CONFIG_..._USB_SERIAL_JTAG is not set" loses to
+# the Kconfig choice default and the console came back on. The console
+# for this board is the CH340 UART0 above.
+CONFIG_ESP_CONSOLE_SECONDARY_NONE=y

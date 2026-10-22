@@ -313,6 +313,12 @@ static lv_display_t *display_start(lv_indev_t **touch)
     ledc_set_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0, 1023);
     ledc_update_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0);
 
+#if CONFIG_ESP_CONSOLE_SECONDARY_USB_SERIAL_JTAG
+    ESP_LOGE(TAG, "console probe: SECONDARY USB Serial/JTAG is ON (steals LCD pins GPIO19/20)");
+#endif
+#if CONFIG_ESP_CONSOLE_SECONDARY_NONE
+    ESP_LOGI(TAG, "console probe: secondary console is NONE (LCD pins safe)");
+#endif
     if (panel_raw_init() != ESP_OK) {
         return NULL;
     }
