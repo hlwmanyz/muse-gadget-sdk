@@ -96,6 +96,8 @@ static esp_lcd_panel_handle_t s_panel;
 static SemaphoreHandle_t s_lv_lock;
 static SemaphoreHandle_t s_flush_sem;
 static volatile bool s_lv_paused;
+static lv_display_t *s_disp;
+static uint32_t s_flush_count;
 
 static bool IRAM_ATTR on_color_trans_done(esp_lcd_panel_io_handle_t io,
                                 esp_lcd_panel_io_event_data_t *edata, void *user_ctx)
@@ -110,12 +112,56 @@ static bool IRAM_ATTR on_color_trans_done(esp_lcd_panel_io_handle_t io,
     return woken == pdTRUE;
 }
 
+/* Paint the 4 test bands straight through esp_lcd_panel_draw_bitmap,
+ * bypassing LVGL entirely. Returns the number of failed draws. */
+static int draw_band_tripwire(void)
+{
+    static const uint16_t band_rgb565[] = { 0xF800, 0x07E0, 0x001F, 0xFFFF };
+    const int sub_h = 20;
+    uint16_t *px = heap_caps_malloc(LCD_W * sub_h * sizeof(uint16_t),
+                                    MALLOC_CAP_INTERNAL | MALLOC_CAP_DMA);
+    if (!px) {
+        ESP_LOGW(TAG, "band tripwire skipped: no DMA buffer");
+        return -1;
+    }
+    int fails = 0;
+    for (int b = 0; b < 4; b++) {
+        const uint16_t v = band_rgb565[b];
+        const uint16_t be = (uint16_t)((v >> 8) | (v << 8));
+        for (int i = 0; i < LCD_W * sub_h; i++) {
+            px[i] = be;
+        }
+        for (int y = b * 80; y < (b + 1) * 80; y += sub_h) {
+            if (esp_lcd_panel_draw_bitmap(s_panel, 0, y, LCD_W, y + sub_h, px) != ESP_OK) {
+                fails++;
+            }
+        }
+    }
+    heap_caps_free(px);
+    return fails;
+}
+
 static void lv_flush_cb(lv_display_t *disp, const lv_area_t *area, uint8_t *px_map)
 {
     uint16_t *px = (uint16_t *)px_map;
     const int n = (area->x2 - area->x1 + 1) * (area->y2 - area->y1 + 1);
+    const uint16_t px0 = px[0];
+    uint16_t mn = 0xFFFF, mx = 0;
     for (int i = 0; i < n; i++) {
-        px[i] = (uint16_t)((px[i] >> 8) | (px[i] << 8));
+        const uint16_t v = px[i];
+        if (v < mn) {
+            mn = v;
+        }
+        if (v > mx) {
+            mx = v;
+        }
+        px[i] = (uint16_t)((v >> 8) | (v << 8));
+    }
+    s_flush_count++;
+    if (s_flush_count <= 10 || s_flush_count % 200 == 0) {
+        ESP_LOGI(TAG, "flush #%lu area=(%d,%d)-(%d,%d) px0=0x%04X min=0x%04X max=0x%04X",
+                 (unsigned long)s_flush_count, (int)area->x1, (int)area->y1,
+                 (int)area->x2, (int)area->y2, (unsigned)px0, (unsigned)mn, (unsigned)mx);
     }
     xSemaphoreTake(s_flush_sem, 0);   /* clear any stale completion */
     esp_lcd_panel_draw_bitmap(s_panel, area->x1, area->y1, area->x2 + 1,
@@ -135,11 +181,37 @@ static void lv_tick_cb(void *arg)
 static void lv_task(void *arg)
 {
     (void)arg;
+    const int64_t start_us = esp_timer_get_time();
+    int64_t last_hb_us = start_us;
+    bool tripwire_done = false;
     for (;;) {
         uint32_t wait_ms = 50;
         if (!s_lv_paused && xSemaphoreTakeRecursive(s_lv_lock, portMAX_DELAY) == pdTRUE) {
             wait_ms = lv_timer_handler();
             xSemaphoreGiveRecursive(s_lv_lock);
+        }
+        const int64_t now_us = esp_timer_get_time();
+        if (!tripwire_done && now_us - start_us > 20 * 1000 * 1000) {
+            /* Post-UI tripwire: 20 s after LVGL starts, pause it and paint
+             * the bands directly again. Bands visible => the panel path is
+             * still alive under the full app and only the LVGL frames are
+             * wrong; no bands => something after boot kills the path. */
+            tripwire_done = true;
+            s_lv_paused = true;
+            vTaskDelay(pdMS_TO_TICKS(300));
+            const int fails = draw_band_tripwire();
+            ESP_LOGI(TAG, "post-UI band tripwire drawn (fails=%d); LVGL paused 10 s", fails);
+            vTaskDelay(pdMS_TO_TICKS(10000));
+            s_lv_paused = false;
+            if (s_disp && xSemaphoreTakeRecursive(s_lv_lock, portMAX_DELAY) == pdTRUE) {
+                lv_obj_invalidate(lv_screen_active());
+                xSemaphoreGiveRecursive(s_lv_lock);
+            }
+            ESP_LOGI(TAG, "post-UI band tripwire over; LVGL resumed");
+        }
+        if (now_us - last_hb_us > 10 * 1000 * 1000) {
+            last_hb_us = now_us;
+            ESP_LOGI(TAG, "lvgl hb: flushes=%lu", (unsigned long)s_flush_count);
         }
         if (wait_ms < 5) {
             wait_ms = 5;
@@ -244,38 +316,13 @@ static lv_display_t *display_start(lv_indev_t **touch)
     ESP_LOGI(TAG, "console probe: UART console is ON (num %d)", CONFIG_ESP_CONSOLE_UART_NUM);
 #endif
 
-    /* Band tripwire (2026-10-22, remove once the UI is up): v2 proved this
-     * paints correctly (red/green/blue/white seen on the panel), so if the
-     * bands appear but the UI after them does not, the fault is inside the
-     * LVGL flush path and nowhere else. */
+    /* Band tripwire (2026-10-22, remove once the UI is up): this paints
+     * correctly (red/green/blue/white seen on the panel), so it is the
+     * known-good reference the LVGL path is measured against. */
     {
-        static const uint16_t band_rgb565[] = { 0xF800, 0x07E0, 0x001F, 0xFFFF };
-        const int sub_h = 20;
-        uint16_t *px = heap_caps_malloc(LCD_W * sub_h * sizeof(uint16_t),
-                                        MALLOC_CAP_INTERNAL | MALLOC_CAP_DMA);
-        if (px) {
-            int fails = 0;
-            for (int b = 0; b < 4; b++) {
-                const uint16_t v = band_rgb565[b];
-                const uint16_t be = (uint16_t)((v >> 8) | (v << 8));
-                for (int i = 0; i < LCD_W * sub_h; i++) {
-                    px[i] = be;
-                }
-                for (int y = b * 80; y < (b + 1) * 80; y += sub_h) {
-                    esp_err_t rc = esp_lcd_panel_draw_bitmap(s_panel, 0, y, LCD_W,
-                                                             y + sub_h, px);
-                    if (rc != ESP_OK) {
-                        fails++;
-                        ESP_LOGW(TAG, "band draw y=%d rc=%s", y, esp_err_to_name(rc));
-                    }
-                }
-            }
-            ESP_LOGI(TAG, "band tripwire drawn (fails=%d), holding 3 s", fails);
-            vTaskDelay(pdMS_TO_TICKS(3000));
-            heap_caps_free(px);
-        } else {
-            ESP_LOGW(TAG, "band test skipped: no DMA buffer");
-        }
+        const int fails = draw_band_tripwire();
+        ESP_LOGI(TAG, "band tripwire drawn (fails=%d), holding 3 s", fails);
+        vTaskDelay(pdMS_TO_TICKS(3000));
     }
 
     /* Hand-rolled LVGL bring-up (see the note above lv_flush_cb). */
@@ -297,6 +344,7 @@ static lv_display_t *display_start(lv_indev_t **touch)
     if (!disp) {
         return NULL;
     }
+    s_disp = disp;
     lv_display_set_default(disp);
     lv_display_set_color_format(disp, LV_COLOR_FORMAT_RGB565);
     const size_t buf_bytes = LCD_W * DRAW_BUF_LINES * sizeof(uint16_t);
