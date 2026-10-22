@@ -286,7 +286,7 @@ static esp_err_t init(void)
 
 static bool display_lock(int timeout_ms);
 static void display_unlock(void);
-static void sentinel_task(void *arg);
+static void rebuild_task(void *arg);
 
 static lv_display_t *display_start(lv_indev_t **touch)
 {
@@ -370,7 +370,7 @@ static lv_display_t *display_start(lv_indev_t **touch)
     }
     ESP_LOGI(TAG, "LVGL up (hand-rolled port): %dx%d, 2 x %d-line PSRAM buffers",
              LCD_W, LCD_H, DRAW_BUF_LINES);
-    xTaskCreate(sentinel_task, "sentinel", 4096, NULL, 5, NULL);
+    xTaskCreate(rebuild_task, "disp_rebuild", 4096, NULL, 5, NULL);
     return disp;
 }
 
@@ -390,16 +390,17 @@ static void display_unlock(void)
     }
 }
 
-/* Layer-cake probe v12 (one-shot diagnostic): the panel hears the boot
- * bands (~1.4 s) and then nothing, on every stack tried, while the v8
- * teardown+rebuild painted fine at +8 s. At +6 s, holding the display
- * lock the whole time so no LVGL flush can paint over the evidence,
- * try progressively deeper revivals, one solid color each:
- *   P1 CYAN    - paint on the existing bus/device (control)
- *   P2 MAGENTA - HW reset + full init sequence, same bus/device
- *   P3 GREEN   - new SPI device handle + reset/init, same bus
- *   P4 YELLOW  - full rebuild: free + re-init bus, new device, reset/init
- * The FIRST color that appears names the poisoned layer. */
+/* The SPI bus created at display_start silently stops reaching the
+ * panel within the first seconds of boot (the boot bands, painted at
+ * ~1.4 s, are the last thing it ever delivers; every call still returns
+ * ESP_OK). The v12 layer-cake probe (2026-10-22) localized it to the
+ * bus itself: re-initializing the panel (P2) and replacing the device
+ * handle (P3) changed nothing, while freeing and re-initializing the
+ * bus (P4) revived the path for good and LVGL has painted through it
+ * ever since. So: 8 s after the display starts, rebuild the whole
+ * display stack once, under the display lock, and force a full LVGL
+ * repaint. The screen is bands-then-blank until then, which the link
+ * setup outlasts anyway. */
 static void panel_hw_reset_and_init(void)
 {
     gpio_set_level(LCD_RST, 1);
@@ -421,38 +422,15 @@ static void panel_hw_reset_and_init(void)
     raw_cmd(0x29, NULL, 0);   /* DISPON */
 }
 
-static void sentinel_task(void *arg)
+static void rebuild_task(void *arg)
 {
     (void)arg;
-    vTaskDelay(pdMS_TO_TICKS(6000));
+    vTaskDelay(pdMS_TO_TICKS(8000));
     if (!display_lock(-1)) {
         vTaskDelete(NULL);
         return;
     }
-    int fails = raw_fill_rows(0x07FF, 0, LCD_H - 1);
-    ESP_LOGI(TAG, "probe P1 CYAN painted on existing path, fails=%d", fails);
-    vTaskDelay(pdMS_TO_TICKS(3000));
-
-    panel_hw_reset_and_init();
-    fails = raw_fill_rows(0xF81F, 0, LCD_H - 1);
-    ESP_LOGI(TAG, "probe P2 MAGENTA after reset+init, fails=%d", fails);
-    vTaskDelay(pdMS_TO_TICKS(3000));
-
-    esp_err_t rc_rm = spi_bus_remove_device(s_raw_dev);
-    const spi_device_interface_config_t raw_cfg = {
-        .mode = 0,
-        .clock_speed_hz = 10 * 1000 * 1000,
-        .spics_io_num = LCD_CS,
-        .queue_size = 1,
-    };
-    esp_err_t rc_add = spi_bus_add_device(LCD_HOST, &raw_cfg, &s_raw_dev);
-    panel_hw_reset_and_init();
-    fails = raw_fill_rows(0x07E0, 0, LCD_H - 1);
-    ESP_LOGI(TAG, "probe P3 GREEN after new device rm=%s add=%s, fails=%d",
-             esp_err_to_name(rc_rm), esp_err_to_name(rc_add), fails);
-    vTaskDelay(pdMS_TO_TICKS(3000));
-
-    rc_rm = spi_bus_remove_device(s_raw_dev);
+    const esp_err_t rc_rm = spi_bus_remove_device(s_raw_dev);
     const esp_err_t rc_free = spi_bus_free(LCD_HOST);
     const spi_bus_config_t bus = {
         .sclk_io_num = LCD_SCLK,
@@ -463,18 +441,22 @@ static void sentinel_task(void *arg)
         .max_transfer_sz = LCD_W * 32 * 2,
     };
     const esp_err_t rc_bus = spi_bus_initialize(LCD_HOST, &bus, SPI_DMA_CH_AUTO);
-    rc_add = ESP_FAIL;
+    esp_err_t rc_add = ESP_FAIL;
     if (rc_bus == ESP_OK) {
+        const spi_device_interface_config_t raw_cfg = {
+            .mode = 0,
+            .clock_speed_hz = 10 * 1000 * 1000,
+            .spics_io_num = LCD_CS,
+            .queue_size = 1,
+        };
         rc_add = spi_bus_add_device(LCD_HOST, &raw_cfg, &s_raw_dev);
     }
     panel_hw_reset_and_init();
-    fails = raw_fill_rows(0xFFE0, 0, LCD_H - 1);
-    ESP_LOGI(TAG, "probe P4 YELLOW after full rebuild rm=%s free=%s bus=%s add=%s, fails=%d",
+    lv_obj_invalidate(lv_screen_active());
+    ESP_LOGI(TAG, "display stack rebuilt: rm=%s free=%s bus=%s add=%s",
              esp_err_to_name(rc_rm), esp_err_to_name(rc_free),
-             esp_err_to_name(rc_bus), esp_err_to_name(rc_add), fails);
-    vTaskDelay(pdMS_TO_TICKS(3000));
+             esp_err_to_name(rc_bus), esp_err_to_name(rc_add));
     display_unlock();
-    ESP_LOGI(TAG, "probe done; LVGL resumes");
     vTaskDelete(NULL);
 }
 
