@@ -45,6 +45,7 @@
 #include "esp_lcd_panel_io.h"
 #include "esp_lcd_panel_ops.h"
 #include "esp_lcd_panel_vendor.h"
+#include "esp_heap_caps.h"
 #include "esp_log.h"
 #include "esp_lv_adapter.h"
 #include "esp_sleep.h"
@@ -155,6 +156,34 @@ static lv_display_t *display_start(lv_indev_t **touch)
     esp_lcd_panel_swap_xy(s_panel, false);
     esp_lcd_panel_mirror(s_panel, false, false);
     esp_lcd_panel_disp_on_off(s_panel, true);
+
+    /* One-shot panel bisection (2026-10-22, remove once the screen works):
+     * paint 4 horizontal bands straight through esp_lcd_panel_draw_bitmap,
+     * before LVGL starts. Bands visible => panel/SPI/driver path is good
+     * and the blank screen lives in the LVGL/adapter layer; no bands =>
+     * the fault is below LVGL despite init matching xiaozhi byte for byte. */
+    {
+        static const uint16_t band_rgb565[] = { 0xF800, 0x07E0, 0x001F, 0xFFFF };
+        const int band_h = 80;
+        uint16_t *px = heap_caps_malloc(LCD_W * band_h * sizeof(uint16_t),
+                                        MALLOC_CAP_INTERNAL | MALLOC_CAP_DMA);
+        if (px) {
+            for (int b = 0; b < 4; b++) {
+                const uint16_t v = band_rgb565[b];
+                const uint16_t be = (uint16_t)((v >> 8) | (v << 8));
+                for (int i = 0; i < LCD_W * band_h; i++) {
+                    px[i] = be;
+                }
+                esp_lcd_panel_draw_bitmap(s_panel, 0, b * band_h, LCD_W,
+                                          (b + 1) * band_h, px);
+            }
+            ESP_LOGI(TAG, "band test drawn, holding 3 s");
+            vTaskDelay(pdMS_TO_TICKS(3000));
+            heap_caps_free(px);
+        } else {
+            ESP_LOGW(TAG, "band test skipped: no DMA buffer");
+        }
+    }
 
     esp_lv_adapter_config_t adapter_cfg = ESP_LV_ADAPTER_DEFAULT_CONFIG();
     adapter_cfg.task_core_id = MUSE_UI_CORE;
