@@ -38,6 +38,7 @@
 #include <math.h>
 
 #include "driver/i2s_std.h"
+#include "driver/gpio.h"
 #include "driver/ledc.h"
 #include "driver/spi_master.h"
 #include "esp_check.h"
@@ -415,41 +416,98 @@ static void panel_sleep(bool sleep)
     esp_lcd_panel_disp_sleep(s_panel, sleep);   /* SLPIN/SLPOUT; GRAM is kept */
 }
 
-/* Wake-and-revive probe. The panel blanks to lit grey ~1 s after LVGL
- * starts while every write reports success. At +8 s (display lock held):
- *   1. SLPOUT + DISPON, NO draw: whatever GRAM still holds flashes up.
- *      Bands => GRAM writes never landed after boot; UI/white => they
- *      land but scan-out was off.
- *   2. Full re-init (reset + init + invert + on), then MAGENTA: if this
- *      shows, the panel had lost its init state (reset/brown-out).
- *   3. CYAN with no further re-init: post-revive writes land normally. */
+/* Raw-polling probe: at +8 s, bypass esp_lcd entirely. A second SPI
+ * device on the same bus drives the panel with polling transfers and a
+ * hand-sent ST7789 init (DC toggled by hand). If MAGENTA shows here,
+ * esp_lcd's queued-DMA path is what dies under the running app, and raw
+ * polling is a working fallback. If it stays grey, the failure is below
+ * esp_lcd (bus/pins/panel power). */
+static spi_device_handle_t s_raw_dev;
+
+static void raw_tx(const void *data, size_t len_bytes, int dc)
+{
+    if (!data || len_bytes == 0) {
+        return;
+    }
+    gpio_set_level(LCD_DC, dc);
+    spi_transaction_t t = {
+        .length = len_bytes * 8,
+        .tx_buffer = data,
+    };
+    spi_device_polling_transmit(s_raw_dev, &t);
+}
+
+static void raw_cmd(uint8_t cmd, const uint8_t *params, size_t nparams)
+{
+    raw_tx(&cmd, 1, 0);
+    if (params && nparams) {
+        raw_tx(params, nparams, 1);
+    }
+}
+
+static void raw_fill(uint16_t v)
+{
+    const uint16_t be = (uint16_t)((v >> 8) | (v << 8));
+    for (int i = 0; i < LCD_W * 32; i++) {
+        s_probe_buf[i] = be;
+    }
+    static const uint8_t caset[] = { 0x00, 0x00, 0x00, 0xEF };
+    static const uint8_t raset[] = { 0x00, 0x00, 0x01, 0x3F };
+    raw_cmd(0x2A, caset, sizeof(caset));
+    raw_cmd(0x2B, raset, sizeof(raset));
+    raw_cmd(0x2C, NULL, 0);
+    for (int y = 0; y < LCD_H; y += 32) {
+        raw_tx(s_probe_buf, LCD_W * 32 * sizeof(uint16_t), 1);
+    }
+}
+
 static void probe_task(void *arg)
 {
     (void)arg;
     vTaskDelay(pdMS_TO_TICKS(8000));
-    if (display_lock(-1)) {
-        esp_lcd_panel_disp_sleep(s_panel, false);
-        esp_lcd_panel_disp_on_off(s_panel, true);
-        set_brightness(100);
-        ESP_LOGI(TAG, "probe @8s: SLPOUT+DISPON sent, NO draw (watch for old GRAM)");
-        vTaskDelay(pdMS_TO_TICKS(2500));
-        const esp_err_t rc_reset = esp_lcd_panel_reset(s_panel);
-        const esp_err_t rc_init = esp_lcd_panel_init(s_panel);
-        const esp_err_t rc_inv = esp_lcd_panel_invert_color(s_panel, true);
-        const esp_err_t rc_on = esp_lcd_panel_disp_on_off(s_panel, true);
-        const int fails_m = draw_solid(0xF81F);
-        ESP_LOGI(TAG, "probe @8s: re-init reset=%s init=%s inv=%s on=%s; MAGENTA drawn (fails=%d)",
-                 esp_err_to_name(rc_reset), esp_err_to_name(rc_init),
-                 esp_err_to_name(rc_inv), esp_err_to_name(rc_on), fails_m);
-        vTaskDelay(pdMS_TO_TICKS(2500));
-        const int fails_c = draw_solid(0x07FF);
-        ESP_LOGI(TAG, "probe @8s: CYAN drawn after re-init (fails=%d)", fails_c);
-        vTaskDelay(pdMS_TO_TICKS(2500));
+    if (!display_lock(-1)) {
+        vTaskDelete(NULL);
+        return;
+    }
+    const spi_device_interface_config_t raw_cfg = {
+        .mode = 0,
+        .clock_speed_hz = 10 * 1000 * 1000,
+        .spics_io_num = LCD_CS,
+        .queue_size = 1,
+    };
+    esp_err_t rc = spi_bus_add_device(LCD_HOST, &raw_cfg, &s_raw_dev);
+    ESP_LOGI(TAG, "raw probe: add_device=%s", esp_err_to_name(rc));
+    if (rc == ESP_OK && s_probe_buf) {
+        gpio_set_direction(LCD_DC, GPIO_MODE_OUTPUT);
+        /* Manual reset + init, all by polling transfers. */
+        gpio_set_level(LCD_RST, 1);
+        vTaskDelay(pdMS_TO_TICKS(10));
+        gpio_set_level(LCD_RST, 0);
+        vTaskDelay(pdMS_TO_TICKS(10));
+        gpio_set_level(LCD_RST, 1);
+        vTaskDelay(pdMS_TO_TICKS(120));
+        raw_cmd(0x01, NULL, 0);                 /* SWRESET */
+        vTaskDelay(pdMS_TO_TICKS(150));
+        raw_cmd(0x11, NULL, 0);                 /* SLPOUT */
+        vTaskDelay(pdMS_TO_TICKS(120));
+        static const uint8_t colmod[] = { 0x55 };
+        raw_cmd(0x3A, colmod, sizeof(colmod));  /* COLMOD: 16 bpp */
+        static const uint8_t madctl[] = { 0x00 };
+        raw_cmd(0x36, madctl, sizeof(madctl));  /* MADCTL: as driver left it */
+        raw_cmd(0x21, NULL, 0);                 /* INVON */
+        raw_cmd(0x13, NULL, 0);                 /* NORON */
+        raw_cmd(0x29, NULL, 0);                 /* DISPON */
+        raw_fill(0xF81F);
+        ESP_LOGI(TAG, "raw probe: MAGENTA sent by raw polling");
+        vTaskDelay(pdMS_TO_TICKS(3000));
+        raw_fill(0x07FF);
+        ESP_LOGI(TAG, "raw probe: CYAN sent by raw polling");
+        vTaskDelay(pdMS_TO_TICKS(2000));
         if (s_disp) {
             lv_obj_invalidate(lv_screen_active());
         }
-        display_unlock();
     }
+    display_unlock();
     vTaskDelete(NULL);
 }
 
