@@ -201,15 +201,11 @@ static esp_err_t panel_raw_init(void)
     return ESP_OK;
 }
 
-static volatile uint32_t s_flush_count;
-static volatile uint32_t s_flush_rc_fail;
-
 static void lv_flush_cb(lv_display_t *disp, const lv_area_t *area, uint8_t *px_map)
 {
     const uint16_t *px = (const uint16_t *)px_map;
     const int w = area->x2 - area->x1 + 1;
     const int h = area->y2 - area->y1 + 1;
-    uint16_t mn = 0xFFFF, mx = 0;
     /* LVGL's draw buffers live in PSRAM (internal RAM is reserved for the
      * I2S DMA: with internal draw buffers the speaker's DMA descriptors
      * failed to allocate and the voice pipeline died). Each slice is
@@ -220,29 +216,13 @@ static void lv_flush_cb(lv_display_t *disp, const lv_area_t *area, uint8_t *px_m
         const uint16_t *srcp = px + done_rows * w;
         for (int i = 0; i < w * slice; i++) {
             const uint16_t v = srcp[i];
-            if (v < mn) {
-                mn = v;
-            }
-            if (v > mx) {
-                mx = v;
-            }
             s_stage[i] = (uint16_t)((v >> 8) | (v << 8));
         }
         if (raw_window(area->x1, area->y1 + done_rows, area->x2,
                        area->y1 + done_rows + slice - 1) == ESP_OK) {
-            if (raw_tx(s_stage, (size_t)w * slice * sizeof(uint16_t), 1) != ESP_OK) {
-                s_flush_rc_fail++;
-            }
-        } else {
-            s_flush_rc_fail++;
+            raw_tx(s_stage, (size_t)w * slice * sizeof(uint16_t), 1);
         }
         done_rows += slice;
-    }
-    s_flush_count++;
-    if (s_flush_count <= 10 || s_flush_count % 100 == 0) {
-        ESP_LOGI(TAG, "flush #%lu area %d,%d-%d,%d px min=%04x max=%04x rc_fail=%lu",
-                 (unsigned long)s_flush_count, area->x1, area->y1, area->x2,
-                 area->y2, mn, mx, (unsigned long)s_flush_rc_fail);
     }
     lv_display_flush_ready(disp);
 }
@@ -331,8 +311,8 @@ static lv_display_t *display_start(lv_indev_t **touch)
         for (int b = 0; b < 4; b++) {
             fails += raw_fill_rows(band_rgb565[b], b * 80, (b + 1) * 80 - 1) != 0;
         }
-        ESP_LOGI(TAG, "boot bands drawn (fails=%d), holding 1.5 s", fails);
-        vTaskDelay(pdMS_TO_TICKS(1500));
+        ESP_LOGI(TAG, "boot bands drawn (fails=%d), holding 0.5 s", fails);
+        vTaskDelay(pdMS_TO_TICKS(500));
     }
 
     /* Hand-rolled LVGL bring-up (see the note above lv_flush_cb). */
@@ -397,7 +377,8 @@ static void display_unlock(void)
  * bus itself: re-initializing the panel (P2) and replacing the device
  * handle (P3) changed nothing, while freeing and re-initializing the
  * bus (P4) revived the path for good and LVGL has painted through it
- * ever since. So: 8 s after the display starts, rebuild the whole
+ * ever since. So: 4 s after the display starts (past the measured
+ * death window of ~1.5-3 s, with margin), rebuild the whole
  * display stack once, under the display lock, and force a full LVGL
  * repaint. The screen is bands-then-blank until then, which the link
  * setup outlasts anyway. */
@@ -425,7 +406,7 @@ static void panel_hw_reset_and_init(void)
 static void rebuild_task(void *arg)
 {
     (void)arg;
-    vTaskDelay(pdMS_TO_TICKS(8000));
+    vTaskDelay(pdMS_TO_TICKS(4000));
     if (!display_lock(-1)) {
         vTaskDelete(NULL);
         return;
