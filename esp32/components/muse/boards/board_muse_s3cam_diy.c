@@ -47,10 +47,12 @@
 #include "esp_lcd_panel_vendor.h"
 #include "esp_heap_caps.h"
 #include "esp_log.h"
-#include "esp_lv_adapter.h"
 #include "esp_sleep.h"
+#include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
+#include "freertos/semphr.h"
 #include "freertos/task.h"
+#include "lvgl.h"
 
 #include "muse_audio.h"
 #include "muse_board.h"
@@ -84,6 +86,70 @@ static const char *TAG = "board";
 #define MIC_GAIN_OFFSET_DB 0
 
 static esp_lcd_panel_handle_t s_panel;
+
+/* Hand-rolled LVGL port (xiaozhi-style), bypassing esp_lv_adapter: on this
+ * board the adapter's flushes never became visible even though identical
+ * esp_lcd_panel_draw_bitmap calls from board code paint fine (band test,
+ * 2026-10-22), so LVGL renders here and flushes through a callback that
+ * byte-swaps to the panel's big-endian RGB565 and waits for the SPI
+ * transfer to actually finish before telling LVGL the buffer is free. */
+static SemaphoreHandle_t s_lv_lock;
+static SemaphoreHandle_t s_flush_sem;
+static volatile bool s_lv_paused;
+
+static bool IRAM_ATTR on_color_trans_done(esp_lcd_panel_io_handle_t io,
+                                esp_lcd_panel_io_event_data_t *edata, void *user_ctx)
+{
+    (void)io;
+    (void)edata;
+    (void)user_ctx;
+    BaseType_t woken = pdFALSE;
+    if (s_flush_sem) {
+        xSemaphoreGiveFromISR(s_flush_sem, &woken);
+    }
+    return woken == pdTRUE;
+}
+
+static void lv_flush_cb(lv_display_t *disp, const lv_area_t *area, uint8_t *px_map)
+{
+    uint16_t *px = (uint16_t *)px_map;
+    const int n = (area->x2 - area->x1 + 1) * (area->y2 - area->y1 + 1);
+    for (int i = 0; i < n; i++) {
+        px[i] = (uint16_t)((px[i] >> 8) | (px[i] << 8));
+    }
+    xSemaphoreTake(s_flush_sem, 0);   /* clear any stale completion */
+    esp_lcd_panel_draw_bitmap(s_panel, area->x1, area->y1, area->x2 + 1,
+                              area->y2 + 1, px);
+    if (xSemaphoreTake(s_flush_sem, pdMS_TO_TICKS(200)) != pdTRUE) {
+        ESP_LOGW(TAG, "flush wait timed out");
+    }
+    lv_display_flush_ready(disp);
+}
+
+static void lv_tick_cb(void *arg)
+{
+    (void)arg;
+    lv_tick_inc(10);
+}
+
+static void lv_task(void *arg)
+{
+    (void)arg;
+    for (;;) {
+        uint32_t wait_ms = 50;
+        if (!s_lv_paused && xSemaphoreTakeRecursive(s_lv_lock, portMAX_DELAY) == pdTRUE) {
+            wait_ms = lv_timer_handler();
+            xSemaphoreGiveRecursive(s_lv_lock);
+        }
+        if (wait_ms < 5) {
+            wait_ms = 5;
+        } else if (wait_ms > 50) {
+            wait_ms = 50;
+        }
+        vTaskDelay(pdMS_TO_TICKS(wait_ms));
+    }
+}
+
 static muse_gpio_button_t s_talk;
 static i2s_chan_handle_t s_tx, s_rx;
 static int s_mic_gain_q8 = 256;
@@ -117,6 +183,10 @@ static lv_display_t *display_start(lv_indev_t **touch)
     if (ledc_timer_config(&bl_timer) != ESP_OK || ledc_channel_config(&bl_ch) != ESP_OK) {
         return NULL;
     }
+    /* Backlight fully on from the start (the channel config leaves duty 0);
+     * muse_ui manages brightness from here via set_brightness(). */
+    ledc_set_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0, 1023);
+    ledc_update_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0);
 
     const spi_bus_config_t bus = {
         .sclk_io_num = LCD_SCLK,
@@ -129,6 +199,7 @@ static lv_display_t *display_start(lv_indev_t **touch)
     if (spi_bus_initialize(LCD_HOST, &bus, SPI_DMA_CH_AUTO) != ESP_OK) {
         return NULL;
     }
+    s_flush_sem = xSemaphoreCreateBinary();
     esp_lcd_panel_io_handle_t io;
     const esp_lcd_panel_io_spi_config_t io_cfg = {
         .cs_gpio_num = LCD_CS,
@@ -136,6 +207,7 @@ static lv_display_t *display_start(lv_indev_t **touch)
         .spi_mode = 0,
         .pclk_hz = 40 * 1000 * 1000,
         .trans_queue_depth = 10,
+        .on_color_trans_done = on_color_trans_done,
         .lcd_cmd_bits = 8,
         .lcd_param_bits = 8,
     };
@@ -172,11 +244,10 @@ static lv_display_t *display_start(lv_indev_t **touch)
     ESP_LOGI(TAG, "console probe: UART console is ON (num %d)", CONFIG_ESP_CONSOLE_UART_NUM);
 #endif
 
-    /* One-shot panel bisection v2 (2026-10-22, remove once the screen works):
-     * same 4 bands as v1 (which drew nothing visible in run #65), but issued
-     * as 20-line sub-draws like xiaozhi's flush / the 2026-10-15 per-line
-     * diagnostic that DID light this panel, every return code logged, and
-     * held 30 s so the pattern cannot be missed. */
+    /* Band tripwire (2026-10-22, remove once the UI is up): v2 proved this
+     * paints correctly (red/green/blue/white seen on the panel), so if the
+     * bands appear but the UI after them does not, the fault is inside the
+     * LVGL flush path and nowhere else. */
     {
         static const uint16_t band_rgb565[] = { 0xF800, 0x07E0, 0x001F, 0xFFFF };
         const int sub_h = 20;
@@ -199,47 +270,66 @@ static lv_display_t *display_start(lv_indev_t **touch)
                     }
                 }
             }
-            ESP_LOGI(TAG, "band test v2 drawn (fails=%d), holding 30 s", fails);
-            for (int s = 30; s > 0; s -= 5) {
-                ESP_LOGI(TAG, "band test holding: %d s left", s);
-                vTaskDelay(pdMS_TO_TICKS(5000));
-            }
+            ESP_LOGI(TAG, "band tripwire drawn (fails=%d), holding 3 s", fails);
+            vTaskDelay(pdMS_TO_TICKS(3000));
             heap_caps_free(px);
         } else {
             ESP_LOGW(TAG, "band test skipped: no DMA buffer");
         }
     }
 
-    esp_lv_adapter_config_t adapter_cfg = ESP_LV_ADAPTER_DEFAULT_CONFIG();
-    adapter_cfg.task_core_id = MUSE_UI_CORE;
-    adapter_cfg.task_priority = MUSE_UI_PRIORITY;
-    if (esp_lv_adapter_init(&adapter_cfg) != ESP_OK) {
+    /* Hand-rolled LVGL bring-up (see the note above lv_flush_cb). */
+    s_lv_lock = xSemaphoreCreateRecursiveMutex();
+    if (!s_lv_lock) {
         return NULL;
     }
-    const esp_lv_adapter_display_config_t disp_cfg = {
-        .panel = s_panel,
-        .panel_io = io,
-        .profile = {
-            .interface = ESP_LV_ADAPTER_PANEL_IF_OTHER,
-            .rotation = ESP_LV_ADAPTER_ROTATE_0,
-            .hor_res = LCD_W,
-            .ver_res = LCD_H,
-            .buffer_height = DRAW_BUF_LINES,
-            .use_psram = false,
-            .require_double_buffer = true,
-        },
-        .tear_avoid_mode = ESP_LV_ADAPTER_TEAR_AVOID_MODE_NONE,
+    lv_init();
+    const esp_timer_create_args_t tick_args = {
+        .callback = lv_tick_cb,
+        .name = "lv_tick",
     };
-    lv_display_t *disp = esp_lv_adapter_register_display(&disp_cfg);
-    if (!disp || esp_lv_adapter_start() != ESP_OK) {
+    esp_timer_handle_t tick_timer;
+    if (esp_timer_create(&tick_args, &tick_timer) != ESP_OK
+        || esp_timer_start_periodic(tick_timer, 10 * 1000) != ESP_OK) {
         return NULL;
     }
+    lv_display_t *disp = lv_display_create(LCD_W, LCD_H);
+    if (!disp) {
+        return NULL;
+    }
+    lv_display_set_default(disp);
+    lv_display_set_color_format(disp, LV_COLOR_FORMAT_RGB565);
+    const size_t buf_bytes = LCD_W * DRAW_BUF_LINES * sizeof(uint16_t);
+    void *buf1 = heap_caps_malloc(buf_bytes, MALLOC_CAP_INTERNAL | MALLOC_CAP_DMA);
+    void *buf2 = heap_caps_malloc(buf_bytes, MALLOC_CAP_INTERNAL | MALLOC_CAP_DMA);
+    if (!buf1 || !buf2) {
+        return NULL;
+    }
+    lv_display_set_buffers(disp, buf1, buf2, buf_bytes, LV_DISPLAY_RENDER_MODE_PARTIAL);
+    lv_display_set_flush_cb(disp, lv_flush_cb);
+    if (xTaskCreatePinnedToCore(lv_task, "lvgl", 12288, NULL, MUSE_UI_PRIORITY,
+                                NULL, MUSE_UI_CORE) != pdPASS) {
+        return NULL;
+    }
+    ESP_LOGI(TAG, "LVGL up (hand-rolled port): %dx%d, 2 x %d-line DMA buffers",
+             LCD_W, LCD_H, DRAW_BUF_LINES);
     return disp;
 }
 
 static bool display_lock(int timeout_ms)
 {
-    return esp_lv_adapter_lock(timeout_ms) == ESP_OK;
+    if (!s_lv_lock) {
+        return false;
+    }
+    const TickType_t ticks = timeout_ms < 0 ? portMAX_DELAY : pdMS_TO_TICKS(timeout_ms);
+    return xSemaphoreTakeRecursive(s_lv_lock, ticks) == pdTRUE;
+}
+
+static void display_unlock(void)
+{
+    if (s_lv_lock) {
+        xSemaphoreGiveRecursive(s_lv_lock);
+    }
 }
 
 static void set_brightness(int pct)
@@ -255,11 +345,7 @@ static void panel_sleep(bool sleep)
 
 static void display_pause(bool pause)
 {
-    if (pause) {
-        esp_lv_adapter_pause(-1);
-    } else {
-        esp_lv_adapter_resume();
-    }
+    s_lv_paused = pause;
 }
 
 /* No codec: the MAX98357A takes I2S as is, esp_codec_dev adds the volume in
@@ -397,7 +483,7 @@ static const muse_board_t s_board = {
     .init = init,
     .display_start = display_start,
     .display_lock = display_lock,
-    .display_unlock = esp_lv_adapter_unlock,
+    .display_unlock = display_unlock,
     .set_brightness = set_brightness,
     .panel_sleep = panel_sleep,
     .display_pause = display_pause,
