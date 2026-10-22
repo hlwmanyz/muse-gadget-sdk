@@ -38,14 +38,11 @@
 #include <math.h>
 
 #include "driver/i2s_std.h"
-#include "driver/gpio.h"
 #include "driver/ledc.h"
 #include "driver/spi_master.h"
 #include "esp_check.h"
 #include "esp_codec_dev.h"
-#include "esp_lcd_panel_io.h"
-#include "esp_lcd_panel_ops.h"
-#include "esp_lcd_panel_vendor.h"
+#include "driver/gpio.h"
 #include "esp_heap_caps.h"
 #include "esp_log.h"
 #include "esp_sleep.h"
@@ -86,348 +83,19 @@ static const char *TAG = "board";
  * brings speech up to where the ES8311 boards have it. */
 #define MIC_GAIN_OFFSET_DB 0
 
-static esp_lcd_panel_handle_t s_panel;
-static esp_lcd_panel_io_handle_t s_io;
-static volatile bool s_panel_dead;   /* set by the v8 probe after teardown */
-
-/* Hand-rolled LVGL port (xiaozhi-style), bypassing esp_lv_adapter: on this
- * board the adapter's flushes never became visible even though identical
- * esp_lcd_panel_draw_bitmap calls from board code paint fine (band test,
- * 2026-10-22), so LVGL renders here and flushes through a callback that
- * byte-swaps to the panel's big-endian RGB565 and waits for the SPI
- * transfer to actually finish before telling LVGL the buffer is free. */
-static SemaphoreHandle_t s_lv_lock;
-static SemaphoreHandle_t s_flush_sem;
-static volatile bool s_lv_paused;
-static lv_display_t *s_disp;
-static uint32_t s_flush_count;
-
-static bool IRAM_ATTR on_color_trans_done(esp_lcd_panel_io_handle_t io,
-                                esp_lcd_panel_io_event_data_t *edata, void *user_ctx)
-{
-    (void)io;
-    (void)edata;
-    (void)user_ctx;
-    BaseType_t woken = pdFALSE;
-    if (s_flush_sem) {
-        xSemaphoreGiveFromISR(s_flush_sem, &woken);
-    }
-    return woken == pdTRUE;
-}
-
-/* Paint the 4 test bands straight through esp_lcd_panel_draw_bitmap,
- * bypassing LVGL entirely. Returns the number of failed draws. */
-static uint16_t *s_probe_buf;   /* static DMA buffer for direct panel probes */
-
-static int draw_band_tripwire(void)
-{
-    static const uint16_t band_rgb565[] = { 0xF800, 0x07E0, 0x001F, 0xFFFF };
-    const int sub_h = 32;
-    uint16_t *px = s_probe_buf;
-    bool borrowed = px != NULL;
-    if (!px) {
-        px = heap_caps_malloc(LCD_W * sub_h * sizeof(uint16_t),
-                              MALLOC_CAP_INTERNAL | MALLOC_CAP_DMA);
-    }
-    if (!px) {
-        ESP_LOGW(TAG, "band tripwire skipped: no DMA buffer");
-        return -1;
-    }
-    int fails = 0;
-    for (int b = 0; b < 4; b++) {
-        const uint16_t v = band_rgb565[b];
-        const uint16_t be = (uint16_t)((v >> 8) | (v << 8));
-        for (int i = 0; i < LCD_W * sub_h; i++) {
-            px[i] = be;
-        }
-        for (int y = b * 80; y < (b + 1) * 80; y += sub_h) {
-            if (esp_lcd_panel_draw_bitmap(s_panel, 0, y, LCD_W, y + sub_h, px) != ESP_OK) {
-                fails++;
-            }
-        }
-    }
-    if (!borrowed) {
-        heap_caps_free(px);
-    }
-    return fails;
-}
-
-/* Full-screen solid colour via direct panel writes (probe buffer chunks).
- * Caller holds the display lock. Returns the number of failed draws. */
-static int draw_solid(uint16_t v)
-{
-    if (!s_probe_buf) {
-        return -1;
-    }
-    const uint16_t be = (uint16_t)((v >> 8) | (v << 8));
-    for (int i = 0; i < LCD_W * 32; i++) {
-        s_probe_buf[i] = be;
-    }
-    int fails = 0;
-    for (int y = 0; y < LCD_H; y += 32) {
-        if (esp_lcd_panel_draw_bitmap(s_panel, 0, y, LCD_W, y + 32, s_probe_buf) != ESP_OK) {
-            fails++;
-        }
-    }
-    return fails;
-}
-
-static void lv_flush_cb(lv_display_t *disp, const lv_area_t *area, uint8_t *px_map)
-{
-    if (s_panel_dead) {
-        lv_display_flush_ready(disp);
-        return;
-    }
-    uint16_t *px = (uint16_t *)px_map;
-    const int n = (area->x2 - area->x1 + 1) * (area->y2 - area->y1 + 1);
-    const uint16_t px0 = px[0];
-    uint16_t mn = 0xFFFF, mx = 0;
-    for (int i = 0; i < n; i++) {
-        const uint16_t v = px[i];
-        if (v < mn) {
-            mn = v;
-        }
-        if (v > mx) {
-            mx = v;
-        }
-        px[i] = (uint16_t)((v >> 8) | (v << 8));
-    }
-    s_flush_count++;
-    if (s_flush_count <= 10 || s_flush_count % 200 == 0) {
-        ESP_LOGI(TAG, "flush #%lu area=(%d,%d)-(%d,%d) px0=0x%04X min=0x%04X max=0x%04X",
-                 (unsigned long)s_flush_count, (int)area->x1, (int)area->y1,
-                 (int)area->x2, (int)area->y2, (unsigned)px0, (unsigned)mn, (unsigned)mx);
-    }
-    xSemaphoreTake(s_flush_sem, 0);   /* clear any stale completion */
-    esp_lcd_panel_draw_bitmap(s_panel, area->x1, area->y1, area->x2 + 1,
-                              area->y2 + 1, px);
-    if (xSemaphoreTake(s_flush_sem, pdMS_TO_TICKS(200)) != pdTRUE) {
-        ESP_LOGW(TAG, "flush wait timed out");
-    }
-    lv_display_flush_ready(disp);
-}
-
-static void lv_tick_cb(void *arg)
-{
-    (void)arg;
-    lv_tick_inc(10);
-}
-
-static void lv_task(void *arg)
-{
-    (void)arg;
-    const int64_t start_us = esp_timer_get_time();
-    int64_t last_hb_us = start_us;
-    for (;;) {
-        uint32_t wait_ms = 50;
-        if (!s_lv_paused && xSemaphoreTakeRecursive(s_lv_lock, portMAX_DELAY) == pdTRUE) {
-            wait_ms = lv_timer_handler();
-            xSemaphoreGiveRecursive(s_lv_lock);
-        }
-        const int64_t now_us = esp_timer_get_time();
-        if (now_us - last_hb_us > 10 * 1000 * 1000) {
-            last_hb_us = now_us;
-            ESP_LOGI(TAG, "lvgl hb: flushes=%lu", (unsigned long)s_flush_count);
-        }
-        if (wait_ms < 5) {
-            wait_ms = 5;
-        } else if (wait_ms > 50) {
-            wait_ms = 50;
-        }
-        vTaskDelay(pdMS_TO_TICKS(wait_ms));
-    }
-}
-
-static muse_gpio_button_t s_talk;
-static i2s_chan_handle_t s_tx, s_rx;
-static int s_mic_gain_q8 = 256;
-static int32_t s_mic_dc[2];            /* each slot's zero level, x256 */
-
-static esp_err_t init(void)
-{
-    ESP_RETURN_ON_ERROR(muse_gpio_button_init(&s_talk, TALK_GPIO), TAG, "talk button");
-    /* Held at reset to get here from the bootloader; don't count that as a press. */
-    s_talk.pressed = gpio_get_level(TALK_GPIO) == 0;
-    return ESP_OK;
-}
-
-static void probe_task(void *arg);
-static void set_brightness(int pct);
-
-static lv_display_t *display_start(lv_indev_t **touch)
-{
-    (void)touch;
-    const ledc_timer_config_t bl_timer = {
-        .speed_mode = LEDC_LOW_SPEED_MODE,
-        .duty_resolution = LEDC_TIMER_10_BIT,
-        .timer_num = LEDC_TIMER_0,
-        .freq_hz = 20000,
-        .clk_cfg = LEDC_AUTO_CLK,
-    };
-    const ledc_channel_config_t bl_ch = {
-        .gpio_num = LCD_BL,
-        .speed_mode = LEDC_LOW_SPEED_MODE,
-        .channel = LEDC_CHANNEL_0,
-        .timer_sel = LEDC_TIMER_0,
-        .duty = 0,
-    };
-    if (ledc_timer_config(&bl_timer) != ESP_OK || ledc_channel_config(&bl_ch) != ESP_OK) {
-        return NULL;
-    }
-    /* Backlight fully on from the start (the channel config leaves duty 0);
-     * muse_ui manages brightness from here via set_brightness(). */
-    ledc_set_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0, 1023);
-    ledc_update_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0);
-
-    const spi_bus_config_t bus = {
-        .sclk_io_num = LCD_SCLK,
-        .mosi_io_num = LCD_MOSI,
-        .miso_io_num = GPIO_NUM_NC,
-        .quadwp_io_num = GPIO_NUM_NC,
-        .quadhd_io_num = GPIO_NUM_NC,
-        .max_transfer_sz = LCD_W * DRAW_BUF_LINES * 2,
-    };
-    if (spi_bus_initialize(LCD_HOST, &bus, SPI_DMA_CH_AUTO) != ESP_OK) {
-        return NULL;
-    }
-    s_flush_sem = xSemaphoreCreateBinary();
-    esp_lcd_panel_io_handle_t io;
-    s_io = NULL;
-    const esp_lcd_panel_io_spi_config_t io_cfg = {
-        .cs_gpio_num = LCD_CS,
-        .dc_gpio_num = LCD_DC,
-        .spi_mode = 0,
-        .pclk_hz = 40 * 1000 * 1000,
-        .trans_queue_depth = 10,
-        .on_color_trans_done = on_color_trans_done,
-        .lcd_cmd_bits = 8,
-        .lcd_param_bits = 8,
-    };
-    if (esp_lcd_new_panel_io_spi(LCD_HOST, &io_cfg, &io) != ESP_OK) {
-        return NULL;
-    }
-    const esp_lcd_panel_dev_config_t panel_cfg = {
-        .reset_gpio_num = LCD_RST,
-        .rgb_ele_order = LCD_RGB_ELEMENT_ORDER_RGB,
-        .bits_per_pixel = 16,
-    };
-    s_io = io;
-    if (esp_lcd_new_panel_st7789(io, &panel_cfg, &s_panel) != ESP_OK) {
-        return NULL;
-    }
-    esp_err_t rc_reset = esp_lcd_panel_reset(s_panel);
-    esp_err_t rc_init = esp_lcd_panel_init(s_panel);
-    esp_err_t rc_inv = esp_lcd_panel_invert_color(s_panel, true);
-    esp_lcd_panel_swap_xy(s_panel, false);
-    esp_lcd_panel_mirror(s_panel, false, false);
-    esp_err_t rc_on = esp_lcd_panel_disp_on_off(s_panel, true);
-    ESP_LOGI(TAG, "panel bringup: reset=%s init=%s invert=%s on=%s",
-             esp_err_to_name(rc_reset), esp_err_to_name(rc_init),
-             esp_err_to_name(rc_inv), esp_err_to_name(rc_on));
-    /* The LCD sits on GPIO19/20, the S3's native USB D-/D+ pins. If a USB
-     * Serial/JTAG console (primary or the IDF-default secondary) is compiled
-     * in, it claims those pins and the panel hears nothing. Probe it. */
-#if CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG
-    ESP_LOGW(TAG, "console probe: PRIMARY USB Serial/JTAG console is ON");
-#endif
-#if CONFIG_ESP_CONSOLE_SECONDARY_USB_SERIAL_JTAG
-    ESP_LOGW(TAG, "console probe: SECONDARY USB Serial/JTAG console is ON");
-#endif
-#if CONFIG_ESP_CONSOLE_UART
-    ESP_LOGI(TAG, "console probe: UART console is ON (num %d)", CONFIG_ESP_CONSOLE_UART_NUM);
-#endif
-
-    /* Band tripwire (2026-10-22, remove once the UI is up): this paints
-     * correctly (red/green/blue/white seen on the panel), so it is the
-     * known-good reference the LVGL path is measured against. */
-    {
-        const int fails = draw_band_tripwire();
-        ESP_LOGI(TAG, "band tripwire drawn (fails=%d), holding 3 s", fails);
-        vTaskDelay(pdMS_TO_TICKS(3000));
-    }
-
-    /* Hand-rolled LVGL bring-up (see the note above lv_flush_cb). */
-    s_lv_lock = xSemaphoreCreateRecursiveMutex();
-    if (!s_lv_lock) {
-        return NULL;
-    }
-    lv_init();
-    const esp_timer_create_args_t tick_args = {
-        .callback = lv_tick_cb,
-        .name = "lv_tick",
-    };
-    esp_timer_handle_t tick_timer;
-    if (esp_timer_create(&tick_args, &tick_timer) != ESP_OK
-        || esp_timer_start_periodic(tick_timer, 10 * 1000) != ESP_OK) {
-        return NULL;
-    }
-    lv_display_t *disp = lv_display_create(LCD_W, LCD_H);
-    if (!disp) {
-        return NULL;
-    }
-    s_disp = disp;
-    lv_display_set_default(disp);
-    lv_display_set_color_format(disp, LV_COLOR_FORMAT_RGB565);
-    const size_t buf_bytes = LCD_W * DRAW_BUF_LINES * sizeof(uint16_t);
-    void *buf1 = heap_caps_malloc(buf_bytes, MALLOC_CAP_INTERNAL | MALLOC_CAP_DMA);
-    void *buf2 = heap_caps_malloc(buf_bytes, MALLOC_CAP_INTERNAL | MALLOC_CAP_DMA);
-    if (!buf1 || !buf2) {
-        return NULL;
-    }
-    lv_display_set_buffers(disp, buf1, buf2, buf_bytes, LV_DISPLAY_RENDER_MODE_PARTIAL);
-    lv_display_set_flush_cb(disp, lv_flush_cb);
-    if (!s_probe_buf) {
-        s_probe_buf = heap_caps_malloc(LCD_W * 32 * sizeof(uint16_t),
-                                       MALLOC_CAP_INTERNAL | MALLOC_CAP_DMA);
-    }
-    if (xTaskCreatePinnedToCore(lv_task, "lvgl", 12288, NULL, MUSE_UI_PRIORITY,
-                                NULL, MUSE_UI_CORE) != pdPASS) {
-        return NULL;
-    }
-    xTaskCreatePinnedToCore(probe_task, "probe", 4096, NULL, MUSE_UI_PRIORITY,
-                            NULL, MUSE_UI_CORE);
-    ESP_LOGI(TAG, "LVGL up (hand-rolled port): %dx%d, 2 x %d-line DMA buffers",
-             LCD_W, LCD_H, DRAW_BUF_LINES);
-    return disp;
-}
-
-static bool display_lock(int timeout_ms)
-{
-    if (!s_lv_lock) {
-        return false;
-    }
-    const TickType_t ticks = timeout_ms < 0 ? portMAX_DELAY : pdMS_TO_TICKS(timeout_ms);
-    return xSemaphoreTakeRecursive(s_lv_lock, ticks) == pdTRUE;
-}
-
-static void display_unlock(void)
-{
-    if (s_lv_lock) {
-        xSemaphoreGiveRecursive(s_lv_lock);
-    }
-}
-
-static void set_brightness(int pct)
-{
-    static int s_last_pct = -1;
-    if (pct != s_last_pct) {
-        ESP_LOGI(TAG, "brightness %d -> %d", s_last_pct, pct);
-        s_last_pct = pct;
-    }
-    ledc_set_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0, pct * 1023 / 100);
-    ledc_update_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0);
-}
-
-static void panel_sleep(bool sleep)
-{
-    ESP_LOGI(TAG, "panel_sleep(%s)", sleep ? "true" : "false");
-    if (s_panel_dead) {
-        return;
-    }
-    esp_lcd_panel_disp_sleep(s_panel, sleep);   /* SLPIN/SLPOUT; GRAM is kept */
-}
-
 static spi_device_handle_t s_raw_dev;
+static uint16_t *s_stage;   /* LCD_W x 32 staging for solid fills */
+
+/* The panel is driven with raw SPI polling transfers, not the esp_lcd
+ * stack: on this board esp_lcd paints the boot bands and then silently
+ * stops reaching GRAM (every call keeps returning ESP_OK), while a
+ * torn-down, freshly rebuilt bus + raw polling device paints fine --
+ * proven by the v8 probe (2026-10-22): full-screen MAGENTA then CYAN,
+ * every return code ESP_OK, chunk fails 0. So the board owns the SPI
+ * bus and the ST7789 init sequence itself, and LVGL flushes through
+ * the raw path below. */
+static SemaphoreHandle_t s_lv_lock;
+static volatile bool s_lv_paused;
 
 static esp_err_t raw_tx(const void *data, size_t len_bytes, int dc)
 {
@@ -451,100 +119,133 @@ static esp_err_t raw_cmd(uint8_t cmd, const uint8_t *params, size_t nparams)
     return rc;
 }
 
-static int raw_fill(uint16_t v)
+static esp_err_t raw_window(int x1, int y1, int x2, int y2)
 {
-    if (!s_probe_buf) {
+    const uint8_t caset[] = { (uint8_t)(x1 >> 8), (uint8_t)x1,
+                              (uint8_t)(x2 >> 8), (uint8_t)x2 };
+    const uint8_t raset[] = { (uint8_t)(y1 >> 8), (uint8_t)y1,
+                              (uint8_t)(y2 >> 8), (uint8_t)y2 };
+    esp_err_t rc = raw_cmd(0x2A, caset, sizeof(caset));   /* CASET */
+    if (rc == ESP_OK) {
+        rc = raw_cmd(0x2B, raset, sizeof(raset));         /* RASET */
+    }
+    if (rc == ESP_OK) {
+        rc = raw_cmd(0x2C, NULL, 0);                      /* RAMWR */
+    }
+    return rc;
+}
+
+static int raw_fill_rows(uint16_t v, int y1, int y2)
+{
+    if (!s_stage) {
         return -1;
     }
     const uint16_t be = (uint16_t)((v >> 8) | (v << 8));
     for (int i = 0; i < LCD_W * 32; i++) {
-        s_probe_buf[i] = be;
+        s_stage[i] = be;
     }
-    static const uint8_t caset[] = { 0x00, 0x00, 0x00, 0xEF };
-    static const uint8_t raset[] = { 0x00, 0x00, 0x01, 0x3F };
-    int fails = 0;
-    fails += raw_cmd(0x2A, caset, sizeof(caset)) != ESP_OK;
-    fails += raw_cmd(0x2B, raset, sizeof(raset)) != ESP_OK;
-    fails += raw_cmd(0x2C, NULL, 0) != ESP_OK;
-    for (int y = 0; y < LCD_H; y += 32) {
-        fails += raw_tx(s_probe_buf, LCD_W * 32 * sizeof(uint16_t), 1) != ESP_OK;
+    int fails = raw_window(0, y1, LCD_W - 1, y2) != ESP_OK;
+    const int rows = y2 - y1 + 1;
+    int done = 0;
+    while (done < rows) {
+        const int slice = rows - done > 32 ? 32 : rows - done;
+        fails += raw_tx(s_stage, (size_t)LCD_W * slice * sizeof(uint16_t), 1) != ESP_OK;
+        done += slice;
     }
     return fails;
 }
 
-/* Raw-polling probe v8: at +8 s, tear esp_lcd down completely, rebuild
- * the SPI bus fresh, and drive the panel with raw polling transfers,
- * logging EVERY return code (v7's raw path silently swallowed them).
- * If MAGENTA shows here, esp_lcd's stack was the jailer and the raw path
- * is the fix. If it stays grey with all-ESP_OK codes, the failure is
- * below the SPI driver entirely (pins/panel power). */
-
-static void probe_task(void *arg)
+static esp_err_t panel_raw_init(void)
 {
-    (void)arg;
-    vTaskDelay(pdMS_TO_TICKS(8000));
-    if (!display_lock(-1)) {
-        vTaskDelete(NULL);
+    if (panel_raw_init() != ESP_OK) {
+        return NULL;
+    }
+
+    /* Boot bands on the raw path (kept as the power-on tell: if these
+     * show, the panel path is alive; LVGL paints over them in ~1 s). */
+    {
+        static const uint16_t band_rgb565[] = { 0xF800, 0x07E0, 0x001F, 0xFFFF };
+        int fails = 0;
+        for (int b = 0; b < 4; b++) {
+            fails += raw_fill_rows(band_rgb565[b], b * 80, (b + 1) * 80 - 1) != 0;
+        }
+        ESP_LOGI(TAG, "boot bands drawn (fails=%d), holding 1.5 s", fails);
+        vTaskDelay(pdMS_TO_TICKS(1500));
+    }
+
+    /* Hand-rolled LVGL bring-up (see the note above lv_flush_cb). */
+    s_lv_lock = xSemaphoreCreateRecursiveMutex();
+    if (!s_lv_lock) {
+        return NULL;
+    }
+    lv_init();
+    const esp_timer_create_args_t tick_args = {
+        .callback = lv_tick_cb,
+        .name = "lv_tick",
+    };
+    esp_timer_handle_t tick_timer;
+    if (esp_timer_create(&tick_args, &tick_timer) != ESP_OK
+        || esp_timer_start_periodic(tick_timer, 10 * 1000) != ESP_OK) {
+        return NULL;
+    }
+    lv_display_t *disp = lv_display_create(LCD_W, LCD_H);
+    if (!disp) {
+        return NULL;
+    }
+    lv_display_set_default(disp);
+    lv_display_set_color_format(disp, LV_COLOR_FORMAT_RGB565);
+    const size_t buf_bytes = LCD_W * DRAW_BUF_LINES * sizeof(uint16_t);
+    void *buf1 = heap_caps_malloc(buf_bytes, MALLOC_CAP_INTERNAL | MALLOC_CAP_DMA);
+    void *buf2 = heap_caps_malloc(buf_bytes, MALLOC_CAP_INTERNAL | MALLOC_CAP_DMA);
+    if (!buf1 || !buf2) {
+        return NULL;
+    }
+    lv_display_set_buffers(disp, buf1, buf2, buf_bytes, LV_DISPLAY_RENDER_MODE_PARTIAL);
+    lv_display_set_flush_cb(disp, lv_flush_cb);
+    if (xTaskCreatePinnedToCore(lv_task, "lvgl", 12288, NULL, MUSE_UI_PRIORITY,
+                                NULL, MUSE_UI_CORE) != pdPASS) {
+        return NULL;
+    }
+    ESP_LOGI(TAG, "LVGL up (hand-rolled port): %dx%d, 2 x %d-line DMA buffers",
+             LCD_W, LCD_H, DRAW_BUF_LINES);
+    return disp;
+}
+
+static bool display_lock(int timeout_ms)
+{
+    if (!s_lv_lock) {
+        return false;
+    }
+    const TickType_t ticks = timeout_ms < 0 ? portMAX_DELAY : pdMS_TO_TICKS(timeout_ms);
+    return xSemaphoreTakeRecursive(s_lv_lock, ticks) == pdTRUE;
+}
+
+static void display_unlock(void)
+{
+    if (s_lv_lock) {
+        xSemaphoreGiveRecursive(s_lv_lock);
+    }
+}
+
+static void set_brightness(int pct)
+{
+    ledc_set_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0, pct * 1023 / 100);
+    ledc_update_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0);
+}
+
+static void panel_sleep(bool sleep)
+{
+    if (!s_raw_dev) {
         return;
     }
-    s_panel_dead = true;
-    const esp_err_t rc_pdel = esp_lcd_panel_del(s_panel);
-    const esp_err_t rc_idel = s_io ? esp_lcd_panel_io_del(s_io) : ESP_ERR_INVALID_STATE;
-    const esp_err_t rc_free = spi_bus_free(LCD_HOST);
-    ESP_LOGI(TAG, "raw probe: teardown panel_del=%s io_del=%s bus_free=%s",
-             esp_err_to_name(rc_pdel), esp_err_to_name(rc_idel),
-             esp_err_to_name(rc_free));
-    const spi_bus_config_t bus = {
-        .sclk_io_num = LCD_SCLK,
-        .mosi_io_num = LCD_MOSI,
-        .miso_io_num = GPIO_NUM_NC,
-        .quadwp_io_num = GPIO_NUM_NC,
-        .quadhd_io_num = GPIO_NUM_NC,
-        .max_transfer_sz = LCD_W * 32 * 2,
-    };
-    const esp_err_t rc_bus = spi_bus_initialize(LCD_HOST, &bus, SPI_DMA_CH_AUTO);
-    const spi_device_interface_config_t raw_cfg = {
-        .mode = 0,
-        .clock_speed_hz = 10 * 1000 * 1000,
-        .spics_io_num = LCD_CS,
-        .queue_size = 1,
-    };
-    esp_err_t rc_add = ESP_FAIL;
-    if (rc_bus == ESP_OK) {
-        rc_add = spi_bus_add_device(LCD_HOST, &raw_cfg, &s_raw_dev);
-    }
-    ESP_LOGI(TAG, "raw probe: bus_init=%s add_device=%s",
-             esp_err_to_name(rc_bus), esp_err_to_name(rc_add));
-    if (rc_add == ESP_OK && s_probe_buf) {
-        gpio_set_direction(LCD_DC, GPIO_MODE_OUTPUT);
-        gpio_set_level(LCD_RST, 1);
-        vTaskDelay(pdMS_TO_TICKS(10));
-        gpio_set_level(LCD_RST, 0);
-        vTaskDelay(pdMS_TO_TICKS(10));
-        gpio_set_level(LCD_RST, 1);
+    if (sleep) {
+        raw_cmd(0x28, NULL, 0);   /* DISPOFF */
+        raw_cmd(0x10, NULL, 0);   /* SLPIN; GRAM is kept */
+    } else {
+        raw_cmd(0x11, NULL, 0);   /* SLPOUT */
         vTaskDelay(pdMS_TO_TICKS(120));
-        const esp_err_t rc_sw = raw_cmd(0x01, NULL, 0);   /* SWRESET */
-        vTaskDelay(pdMS_TO_TICKS(150));
-        const esp_err_t rc_slp = raw_cmd(0x11, NULL, 0);  /* SLPOUT */
-        vTaskDelay(pdMS_TO_TICKS(120));
-        static const uint8_t colmod[] = { 0x55 };
-        const esp_err_t rc_col = raw_cmd(0x3A, colmod, sizeof(colmod));
-        static const uint8_t madctl[] = { 0x00 };
-        raw_cmd(0x36, madctl, sizeof(madctl));
-        raw_cmd(0x21, NULL, 0);                 /* INVON */
-        raw_cmd(0x13, NULL, 0);                 /* NORON */
-        const esp_err_t rc_on = raw_cmd(0x29, NULL, 0);   /* DISPON */
-        const int fails_m = raw_fill(0xF81F);
-        ESP_LOGI(TAG, "raw probe: init rcs sw=%s slp=%s col=%s on=%s; MAGENTA chunk fails=%d",
-                 esp_err_to_name(rc_sw), esp_err_to_name(rc_slp),
-                 esp_err_to_name(rc_col), esp_err_to_name(rc_on), fails_m);
-        vTaskDelay(pdMS_TO_TICKS(3000));
-        const int fails_c = raw_fill(0x07FF);
-        ESP_LOGI(TAG, "raw probe: CYAN chunk fails=%d", fails_c);
-        vTaskDelay(pdMS_TO_TICKS(2000));
+        raw_cmd(0x29, NULL, 0);   /* DISPON */
     }
-    display_unlock();
-    vTaskDelete(NULL);
 }
 
 static void display_pause(bool pause)
