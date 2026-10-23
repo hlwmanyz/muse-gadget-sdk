@@ -55,7 +55,7 @@
 #include "esp_crt_bundle.h"
 #include "esp_netif_sntp.h"
 #include "mbedtls/base64.h"
-#include "mbedtls/sha256.h"
+#include "psa/crypto.h"   /* IDF 6 / TF-PSA-Crypto: no more mbedtls/sha256.h */
 #include "esp_heap_caps.h"
 #include "esp_log.h"
 #include "esp_random.h"
@@ -1645,7 +1645,7 @@ static bool edge_time_ready(void)
     return true;
 }
 
-static void edge_gec(char out[65])
+static bool edge_gec(char out[65])
 {
     int64_t ticks = (int64_t)time(nullptr);
     ticks -= ticks % 300;                    /* the GEC window is 5 minutes */
@@ -1653,13 +1653,19 @@ static void edge_gec(char out[65])
     char buf[96];
     snprintf(buf, sizeof(buf), "%lld%s", (long long)ticks, EDGE_TTS_TOKEN);
     uint8_t hash[32];
-    mbedtls_sha256((const uint8_t *)buf, strlen(buf), hash, 0);
+    psa_crypto_init();   /* the Link stack already runs PSA; this is a no-op then */
+    size_t hash_len = 0;
+    if (psa_hash_compute(PSA_ALG_SHA_256, (const uint8_t *)buf, strlen(buf), hash, sizeof(hash), &hash_len) != PSA_SUCCESS ||
+        hash_len != sizeof(hash)) {
+        return false;
+    }
     static const char *hex = "0123456789ABCDEF";
     for (int i = 0; i < 32; i++) {
         out[2 * i] = hex[hash[i] >> 4];
         out[2 * i + 1] = hex[hash[i] & 15];
     }
     out[64] = '\0';
+    return true;
 }
 
 static void edge_js_date(char *out, size_t cap)
@@ -1879,7 +1885,10 @@ static bool edge_tts_fetch(const char *text, const char *voice)
     }
     {
         char gec[65], conn_id[33], key_b64[32];
-        edge_gec(gec);
+        if (!edge_gec(gec)) {
+            ESP_LOGW(TAG, "Edge TTS: SHA-256 for Sec-MS-GEC failed");
+            goto out;
+        }
         edge_hex_id(conn_id);
         uint8_t key_raw[16];
         for (int i = 0; i < 4; i++) {
