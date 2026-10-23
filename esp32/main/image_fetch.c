@@ -632,9 +632,14 @@ static bool vm_allocate_body(fetch_t *f, size_t stack, int width) {
     size_t request_bytes = strlen(f->url) + VM_REQUEST_BYTES;
     size_t keep = NOISE_TX_DMA_RESERVE_BYTES + stack + draw_bytes
                   + request_bytes + FETCH_RESERVE_BYTES;
+    /* Budget against internal memory, not DMA free: the body buffer itself
+     * lives in PSRAM (VM_CAPS), and the TX reserve inside `keep` already
+     * stands for the DMA the transfer needs. Clamping `available` to DMA
+     * free as well double-counts that reserve and refuses every fetch on
+     * boards whose standing DMA consumers (display, Wi-Fi) leave less than
+     * `keep` free even though nothing here would take it. The recheck
+     * below still holds DMA to the TX reserve itself. */
     size_t available = internal_free();
-    size_t dma_free = heap_caps_get_free_size(MALLOC_CAP_DMA);
-    if (available > dma_free) available = dma_free;
     if (available < keep) return false;
 
     size_t chunk = noise_ctrl_req_max_body();
@@ -652,10 +657,12 @@ static bool vm_allocate_body(fetch_t *f, size_t stack, int width) {
 
     // Recheck after the actual allocations, including their heap overhead.
     // A concurrent allocation may also have consumed the sampled headroom.
+    // DMA is held to the TX reserve it actually needs (see above), not to
+    // the whole internal budget.
     size_t block_need = stack > draw_bytes ? stack : draw_bytes;
     if (block_need < request_bytes) block_need = request_bytes;
     return internal_free() >= keep
-        && heap_caps_get_free_size(MALLOC_CAP_DMA) >= keep
+        && heap_caps_get_free_size(MALLOC_CAP_DMA) >= NOISE_TX_DMA_RESERVE_BYTES
         && heap_caps_get_largest_free_block(BYTE_CAPS) >= block_need;
 }
 

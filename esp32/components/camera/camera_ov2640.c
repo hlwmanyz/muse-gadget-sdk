@@ -51,9 +51,12 @@ static framesize_t still_size(void)
 
 /* A still leaves as base64 in a command result: if the JPEG comes out
  * larger than this, capture steps down the ladder rather than ship a
- * result the link takes too long to carry. */
+ * result the link takes too long to carry. The ladder is fine-grained so
+ * a step down gives up as little resolution as possible. */
 #define STILL_BUDGET (192 * 1024)
-static const framesize_t s_still_ladder[] = { FRAMESIZE_UXGA, FRAMESIZE_XGA, FRAMESIZE_SVGA };
+static const framesize_t s_still_ladder[] = {
+    FRAMESIZE_UXGA, FRAMESIZE_SXGA, FRAMESIZE_XGA, FRAMESIZE_SVGA, FRAMESIZE_VGA,
+};
 
 static framesize_t stream_size(void)
 {
@@ -139,6 +142,16 @@ static esp_err_t ov2640_capture(camera_frame_t *out)
     for (;;) {
         framesize_t size = laddered ? s_still_ladder[step] : still_size();
         ESP_RETURN_ON_ERROR(set_size(size), TAG, "still size");
+        if (step == 0 || !laddered) {
+            /* The sensor was powered up for this capture (it powers down
+             * after every still): its auto exposure needs a few frames to
+             * settle, and the first ones out are dark. Throw two away. */
+            for (int warm = 0; warm < 2; warm++) {
+                camera_fb_t *throwaway = esp_camera_fb_get();
+                if (!throwaway) break;
+                esp_camera_fb_return(throwaway);
+            }
+        }
         camera_fb_t *fb = esp_camera_fb_get();
         ESP_RETURN_ON_FALSE(fb, ESP_ERR_TIMEOUT, TAG, "no frame");
         bool last = !laddered || step + 1 >= sizeof(s_still_ladder) / sizeof(s_still_ladder[0]);

@@ -26,6 +26,10 @@ dependencies:
     public: true
     rules:
       - if: "$CONFIG{MUSE_BOARD_ID} != \"none\""
+  espressif/esp-sr:
+    version: "~2.4.3"
+    rules:
+      - if: "$CONFIG{MUSE_BOARD_ID} == \"s3cam_diy\""
   espressif/esp_lvgl_adapter:
     version: "0.6.4"
     rules:

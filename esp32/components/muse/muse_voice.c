@@ -37,6 +37,9 @@
 #include "muse_settings.h"
 #include "muse_state.h"
 #include "muse_wifi.h"
+#if CONFIG_MUSE_WAKEWORD
+#include "muse_wakenet.h"
+#endif
 
 static const char *TAG = "muse_voice";
 
@@ -96,6 +99,18 @@ static muse_adpcm_t s_pre_enc;
 static int16_t s_chunk[MUSE_AUDIO_CHUNK];
 static int s_settle;
 
+#if CONFIG_MUSE_WAKEWORD
+static bool s_wake_hit;           /* the detector heard the word (set in idle_capture) */
+static bool s_wake_record;        /* the record() running now is a wake-word one */
+static bool s_wake_heard;         /* it has heard a chunk loud enough to be speech */
+static bool s_wake_speechless;    /* it ended having heard none: a false wake */
+static size_t s_wake_last_loud;   /* frame count at the last loud chunk */
+#define WAKE_LOUD_DB (-48.0f)     /* a chunk louder than this counts as speech */
+#define WAKE_MIN_FRAMES (MUSE_AUDIO_RATE * 4 / 5)    /* 0.8 s in, before quiet may end it */
+#define WAKE_QUIET_FRAMES (MUSE_AUDIO_RATE)          /* 1.0 s of quiet ends the note */
+#define WAKE_GIVEUP_FRAMES (MUSE_AUDIO_RATE * 3)     /* 3 s with no speech at all */
+#endif
+
 /*
  * The note being recorded (HOLD_NOTES), kept whole in case it can't go now.
  * Streaming, Hatch has had s_sent frames of it.
@@ -137,6 +152,11 @@ static void pre_reset(void)
 {
     s_pre_fill = 0;
     s_settle = SETTLE_CHUNKS;
+#if CONFIG_MUSE_WAKEWORD
+    /* A turn (or Muse's own voice) just passed: the detector starts over,
+     * so a word can't be assembled from audio on both sides of it. */
+    muse_wakenet_reset();
+#endif
 }
 
 /* One 20 ms idle read: feeds the pre-roll ring and the settings mic meter. */
@@ -154,6 +174,13 @@ static void idle_capture(void)
         s_settle--;
         return;
     }
+#if CONFIG_MUSE_WAKEWORD
+    /* Muse's own sounds never reach the detector: playback replaces this
+     * loop, and the settle chunks after it are dropped above. */
+    if (muse_wakenet_feed(s_chunk, MUSE_AUDIO_CHUNK)) {
+        s_wake_hit = true;
+    }
+#endif
     pre_chunk_t *c = &s_pre[s_pre_next];
 #if MUSE_LOW_MEM
     c->start = s_pre_enc;
@@ -256,6 +283,11 @@ static bool record(bool barge_in, size_t *held, char *why, size_t cap)
         go_live();
     }
     muse_state_set_caption(s_live ? "LISTENING..." : "RECORDING...");
+#if CONFIG_MUSE_WAKEWORD
+    s_wake_heard = false;
+    s_wake_speechless = false;
+    s_wake_last_loud = 0;
+#endif
     bool heard = false, ok = true;
     bool gave_up = false;   /* Hatch failed this note: it's kept, and goes later */
     char text[96];
@@ -316,6 +348,27 @@ static bool record(bool barge_in, size_t *held, char *why, size_t cap)
          * Capture runs 60-80 ms behind real time and people let go on their
          * last syllable, so keep going briefly after release.
          */
+#if CONFIG_MUSE_WAKEWORD
+        if (s_wake_record && !released) {
+            /* A wake-word note has no button to let go: quiet ends it, a
+             * second after the last chunk loud enough to be speech. If
+             * nothing loud ever comes (a false wake), it ends at 3 s and
+             * the caller drops it rather than sending silence. */
+            if (muse_audio_dbfs(s_chunk, MUSE_AUDIO_CHUNK) > WAKE_LOUD_DB) {
+                s_wake_heard = true;
+                s_wake_last_loud = n;
+            }
+            if (s_wake_heard && n - pre >= WAKE_MIN_FRAMES
+                && n - s_wake_last_loud >= WAKE_QUIET_FRAMES) {
+                released = true;
+                stop_at = n + TAIL_FRAMES < MAX_FRAMES ? n + TAIL_FRAMES : MAX_FRAMES;
+            } else if (!s_wake_heard && n - pre >= WAKE_GIVEUP_FRAMES) {
+                s_wake_speechless = true;
+                released = true;
+                stop_at = n;
+            }
+        }
+#endif
         if (!released && got_event(MUSE_PTT_UP)) {
             released = true;
             stop_at = n + TAIL_FRAMES < MAX_FRAMES ? n + TAIL_FRAMES : MAX_FRAMES;
@@ -789,6 +842,7 @@ static bool can_record(void)
 static void voice_task(void *arg)
 {
     bool pending_down = false;
+    bool voice_wake = false;   /* a wake word, not a press, starts this turn */
     muse_audio_selftest();
     for (;;) {
         bool wake = false;
@@ -845,28 +899,57 @@ static void voice_task(void *arg)
             }
             /* The 20 ms read paces this loop. */
             idle_capture();
+#if CONFIG_MUSE_WAKEWORD
+            if (s_wake_hit) {
+                s_wake_hit = false;
+                voice_wake = true;
+                muse_state_poke();
+                ESP_LOGI(TAG, "wake word: listening");
+            } else
+#endif
             if (xQueueReceive(s_queue, &ev, 0) != pdTRUE) {
                 continue;
             }
-            muse_state_poke();
-            if (ev.type != MUSE_PTT_DOWN) {
-                continue;
+            if (!voice_wake) {
+                muse_state_poke();
+                if (ev.type != MUSE_PTT_DOWN) {
+                    continue;
+                }
+                wake = ev.wake;
             }
-            wake = ev.wake;
         }
-        if (wake && !held_on_waking()) {
+        if (!voice_wake && wake && !held_on_waking()) {
             continue;   /* a tap: it only woke Muse */
         }
         muse_wifi_power(MUSE_WIFI_FULL);
         if (!can_record()) {
             pending_down = false;
+            voice_wake = false;
             continue;
         }
         size_t held;
         char why[96];
+#if CONFIG_MUSE_WAKEWORD
+        s_wake_record = voice_wake;
+#endif
         bool ok = record(pending_down, &held, why, sizeof(why));
         pending_down = false;
-        if (held < MIN_HELD_FRAMES && !wake) {
+#if CONFIG_MUSE_WAKEWORD
+        s_wake_record = false;
+        if (voice_wake && s_wake_speechless) {
+            /* A false wake: nothing followed the word. Drop it quietly
+             * instead of sending Muse a note of silence. */
+            ESP_LOGI(TAG, "wake word: nothing followed, dropping it");
+            voice_wake = false;
+            muse_hatch_turn_cancel();
+            drop_rec();
+            pre_reset();
+            go_idle("");
+            continue;
+        }
+        voice_wake = false;
+#endif
+        if (held < MIN_HELD_FRAMES && !wake && !voice_wake) {
             muse_hatch_turn_cancel();
             drop_rec();
             pre_reset();

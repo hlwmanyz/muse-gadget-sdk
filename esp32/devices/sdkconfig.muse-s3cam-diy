@@ -20,6 +20,10 @@
 CONFIG_IDF_TARGET="esp32s3"
 CONFIG_MUSE_BOARD_S3CAM_DIY=y
 CONFIG_MUSE_S3CAM_CAMERA=y
+CONFIG_MUSE_S3CAM_WAKEWORD=y
+# The wake word: Espressif WakeNet9 "nihaoxiaoxin_tts". Paired with the
+# "model" partition in partitions_muse.csv, which carries its data.
+CONFIG_SR_WN_WN9_NIHAOXIAOXIN_TTS=y
 
 # The LCD uses GPIO19/20, the chip's native USB pins, so the console and the
 # serial log go out the CH340 TTL port (UART0) instead of USB Serial/JTAG.

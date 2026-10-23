@@ -1535,7 +1535,7 @@ static char *build_register_json(void) {
     cJSON_AddStringToObject(state_param, "description",
                             "\"on\" opens the camera preview on the device's screen, "
                             "\"off\" closes it; omit to toggle. It closes by itself "
-                            "after a few minutes.");
+                            "if left open.");
     cJSON_AddItemToObject(preview_optional, "state", state_param);
     add_command(commands, "camera.preview",
                 "Open or close the live camera preview on the device's screen. "

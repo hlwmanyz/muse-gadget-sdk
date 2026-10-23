@@ -196,17 +196,35 @@ menu "Muse"
         depends on MUSE_BOARD_S3CAM_DIY && SPIRAM
         default n
         help
-            Enable the camera.capture Home Link command and the talk-button
-            double-click camera preview, on the board's OV2640. Camera
-            buffers and tasks consume memory and preview decoding shares
-            CPU time with voice and Link. Leave disabled to build without
-            camera support.
+            Enable the camera.capture and camera.preview Home Link
+            commands on the board's OV2640. Camera buffers and tasks
+            consume memory and preview decoding shares CPU time with
+            voice and Link. Leave disabled to build without camera
+            support.
 
     # Any board's camera: the command's advertisement and dispatch in
     # main/, and the UI's preview hooks, all gate on this one option.
     config MUSE_CAMERA
         bool
         default y if MUSE_WATCHER_CAMERA || MUSE_S3CAM_CAMERA
+
+    config MUSE_S3CAM_WAKEWORD
+        bool "DIY S3CAM keyword wake word"
+        depends on MUSE_BOARD_S3CAM_DIY && SPIRAM
+        default n
+        help
+            Listen for the wake word (Espressif WakeNet, the model picked
+            in the board's sdkconfig) while idle, and record hands-free:
+            say the word, then the request, and recording ends after a
+            second of quiet. Needs the "model" partition with the model
+            data flashed, and costs CPU and memory on the voice task.
+            The talk button keeps working either way. Leave disabled to
+            build without the detector.
+
+    # Any board's wake word: muse_voice's detector hooks gate on this.
+    config MUSE_WAKEWORD
+        bool
+        default y if MUSE_S3CAM_WAKEWORD
 
     config MUSE_CJK_FONT
         bool "Show Chinese and Japanese in captions"

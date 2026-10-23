@@ -50,9 +50,9 @@ static esp_timer_handle_t s_preview_timer;   /* closes a forgotten preview */
 
 /* The preview is opened by command (camera.preview), not by a button on
  * this board, so nothing local closes it: left alone it would hold the
- * sensor (and its DMA buffers) forever. Give it a few minutes, then close
+ * sensor (and its DMA buffers) forever. Give it 90 seconds, then close
  * it like a second toggle. */
-#define CAMERA_PREVIEW_TIMEOUT_US (180LL * 1000 * 1000)
+#define CAMERA_PREVIEW_TIMEOUT_US (90LL * 1000 * 1000)
 static void preview_timeout(void *arg)
 {
     (void)arg;
