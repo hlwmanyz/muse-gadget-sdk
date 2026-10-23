@@ -110,7 +110,15 @@ static const char *TAG = "board";
 #define MIC_GAIN_OFFSET_DB 0
 
 static spi_device_handle_t s_raw_dev;
-static uint16_t *s_stage;   /* LCD_W x 32 staging for solid fills */
+/* Rows per staging slice. The staging buffer is standing DMA (LVGL's
+ * draw buffers live in PSRAM, which SPI DMA cannot read), so its height
+ * is rent: 16 rows (7.5 KB) instead of 32, halved in the 2026-10-23 DMA
+ * accounting to clear display.draw_file's fetch guard with margin. A
+ * frame just takes twice as many slices; at the panel's 40 MHz clock
+ * that is still far faster than 32 rows at the old 10 MHz. */
+#define STAGE_ROWS 16
+static uint16_t *s_stage;   /* LCD_W x STAGE_ROWS staging for fills and flushes */
+static bool s_boot_lit;     /* backlight lit for the first full frame */
 
 /* The panel is driven with raw SPI polling transfers, not the esp_lcd
  * stack: on this board esp_lcd paints the boot bands and then silently
@@ -167,14 +175,14 @@ static int raw_fill_rows(uint16_t v, int y1, int y2)
         return -1;
     }
     const uint16_t be = (uint16_t)((v >> 8) | (v << 8));
-    for (int i = 0; i < LCD_W * 32; i++) {
+    for (int i = 0; i < LCD_W * STAGE_ROWS; i++) {
         s_stage[i] = be;
     }
     int fails = raw_window(0, y1, LCD_W - 1, y2) != ESP_OK;
     const int rows = y2 - y1 + 1;
     int done = 0;
     while (done < rows) {
-        const int slice = rows - done > 32 ? 32 : rows - done;
+        const int slice = rows - done > STAGE_ROWS ? STAGE_ROWS : rows - done;
         fails += raw_tx(s_stage, (size_t)LCD_W * slice * sizeof(uint16_t), 1) != ESP_OK;
         done += slice;
     }
@@ -189,12 +197,20 @@ static esp_err_t panel_raw_init(void)
         .miso_io_num = GPIO_NUM_NC,
         .quadwp_io_num = GPIO_NUM_NC,
         .quadhd_io_num = GPIO_NUM_NC,
-        .max_transfer_sz = LCD_W * 32 * 2,
+        .max_transfer_sz = LCD_W * STAGE_ROWS * 2,
     };
     ESP_RETURN_ON_ERROR(spi_bus_initialize(LCD_HOST, &bus, SPI_DMA_CH_AUTO), TAG, "spi bus");
     const spi_device_interface_config_t raw_cfg = {
         .mode = 0,
-        .clock_speed_hz = 10 * 1000 * 1000,
+        /* 40 MHz, the rate panels like this one are normally driven at.
+         * It sat at 10 MHz from the bring-up era, when the bus fault was
+         * undiagnosed; at 10 MHz a full frame takes long enough that the
+         * eye sees LVGL's bands sweep down the panel. The bus fault's
+         * root cause (the secondary console claiming GPIO19/20) has been
+         * fixed since v17, so the conservative rate is no longer bought
+         * with anything. If a panel garbles at this rate, 20 MHz is the
+         * fallback. */
+        .clock_speed_hz = 40 * 1000 * 1000,
         .spics_io_num = LCD_CS,
         .queue_size = 1,
     };
@@ -218,12 +234,12 @@ static esp_err_t panel_raw_init(void)
     raw_cmd(0x21, NULL, 0);   /* INVON: this panel wants inversion on */
     raw_cmd(0x13, NULL, 0);   /* NORON */
     raw_cmd(0x29, NULL, 0);   /* DISPON */
-    s_stage = heap_caps_malloc(LCD_W * 32 * sizeof(uint16_t),
+    s_stage = heap_caps_malloc(LCD_W * STAGE_ROWS * sizeof(uint16_t),
                                MALLOC_CAP_INTERNAL | MALLOC_CAP_DMA);
     if (!s_stage) {
         return ESP_ERR_NO_MEM;
     }
-    ESP_LOGI(TAG, "panel up (raw SPI polling, 10 MHz)");
+    ESP_LOGI(TAG, "panel up (raw SPI polling, 40 MHz)");
     return ESP_OK;
 }
 
@@ -238,7 +254,7 @@ static void lv_flush_cb(lv_display_t *disp, const lv_area_t *area, uint8_t *px_m
      * byte-swapped into the internal staging buffer, then transmitted. */
     int done_rows = 0;
     while (done_rows < h) {
-        const int slice = h - done_rows > 32 ? 32 : h - done_rows;
+        const int slice = h - done_rows > STAGE_ROWS ? STAGE_ROWS : h - done_rows;
         const uint16_t *srcp = px + done_rows * w;
         for (int i = 0; i < w * slice; i++) {
             const uint16_t v = srcp[i];
@@ -249,6 +265,15 @@ static void lv_flush_cb(lv_display_t *disp, const lv_area_t *area, uint8_t *px_m
             raw_tx(s_stage, (size_t)w * slice * sizeof(uint16_t), 1);
         }
         done_rows += slice;
+    }
+    /* Boot lighting: a flush that reaches the bottom of the screen
+     * completes a full frame, and the backlight has been held off since
+     * init() -- light it now, so the first thing the user sees is the
+     * finished UI rather than the paint sweeping down. */
+    if (!s_boot_lit && area->y2 >= LCD_H - 1) {
+        s_boot_lit = true;
+        ledc_set_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0, 1023);
+        ledc_update_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0);
     }
     lv_display_flush_ready(disp);
 }
@@ -284,6 +309,13 @@ static int32_t s_mic_dc[2];            /* each slot's zero level, x256 */
 
 static esp_err_t init(void)
 {
+    /* The module lights its backlight while the control pin floats, so
+     * an untouched panel shows its power-on state -- a grey wash -- from
+     * the moment it has power. Drive the pin low first thing: boot then
+     * stays dark until the first full UI frame is on the panel (see
+     * lv_flush_cb). display_start moves the pin to LEDC later. */
+    gpio_set_direction(LCD_BL, GPIO_MODE_OUTPUT);
+    gpio_set_level(LCD_BL, 0);
     /* The serial console is UART0 (the CH340 port): this board is in
      * the MUSE_CONSOLE_UART default-y list in components/muse/Kconfig. */
     ESP_RETURN_ON_ERROR(muse_gpio_button_init(&s_talk, TALK_GPIO), TAG, "talk button");
@@ -339,11 +371,15 @@ static lv_display_t *display_start(lv_indev_t **touch)
     if (ledc_timer_config(&bl_timer) != ESP_OK || ledc_channel_config(&bl_ch) != ESP_OK) {
         return NULL;
     }
-    /* The backlight stays OFF (the channel config leaves duty 0) until the
-     * panel holds the clean black frame painted below: lighting it earlier
-     * shows the panel's power-on GRAM garbage as a burst of snow. With the
-     * fill first, boot reads dark -> UI, the way the stock firmware did.
+    /* The backlight stays OFF until the first full UI frame has been
+     * flushed (lv_flush_cb lights it): the black fill below and LVGL's
+     * progressive first paint then happen in the dark, and boot reads
+     * dark -> UI in one step, the way the stock firmware did. Apply the
+     * zero duty explicitly -- init() has been holding the pin low as a
+     * plain GPIO, and the hand-over to LEDC must not float it.
      * muse_ui manages brightness from there via set_brightness(). */
+    ledc_set_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0, 0);
+    ledc_update_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0);
 
 #if CONFIG_ESP_CONSOLE_SECONDARY_USB_SERIAL_JTAG
     ESP_LOGE(TAG, "console probe: SECONDARY USB Serial/JTAG is ON (steals LCD pins GPIO19/20)");
@@ -358,10 +394,8 @@ static lv_display_t *display_start(lv_indev_t **touch)
     /* Clear to black (no hold): a clean dark screen until the rebuilt
      * stack paints the UI. The debug-era colour bands are gone. */
     raw_fill_rows(0x0000, 0, LCD_H - 1);
-
-    /* First clean frame is on the panel: light it. */
-    ledc_set_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0, 1023);
-    ledc_update_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0);
+    /* No light yet: lv_flush_cb turns the backlight on once a complete
+     * UI frame has reached the panel. */
 
     /* Hand-rolled LVGL bring-up (see the note above lv_flush_cb). */
     s_lv_lock = xSemaphoreCreateRecursiveMutex();
