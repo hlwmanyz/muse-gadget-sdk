@@ -179,6 +179,12 @@ limitations under the License.
         <input type="checkbox" id="speaker-toggle"> Speaker — play replies out loud
       </label>
       <p id="speaker-status" class="status"></p>
+      <p class="note">
+        Or play the gadget's built-in test sound — decoded and played entirely
+        on the gadget, no network involved.
+      </p>
+      <button id="test-sound" class="button secondary">Play test sound</button>
+      <p id="test-sound-status" class="status"></p>
     </details>
 
     <footer class="note">
@@ -191,7 +197,7 @@ limitations under the License.
   <script type="module">
     import { installFlasherHooks } from "./flasher-hooks.js";
     import { installPacedSerial } from "./paced-serial.js";
-    import { isSdkToken, sendSdkToken, gadgetSpeaker } from "./sdk-token.js";
+    import { isSdkToken, sendSdkToken, gadgetSpeaker, gadgetTestSound } from "./sdk-token.js";
 
     const $ = (id) => document.getElementById(id);
     const select = $("board");
@@ -352,6 +358,19 @@ limitations under the License.
       } finally {
         speakerBusy = false;
         speakerToggle.disabled = false;
+      }
+    });
+
+    $("test-sound").disabled = !pacing;
+    $("test-sound").addEventListener("click", async () => {
+      showStatus($("test-sound-status"), "Asking the gadget to play its test sound…");
+      try {
+        const port = await navigator.serial.requestPort();
+        await gadgetTestSound(port);
+        showStatus($("test-sound-status"), "Sent. If the gadget stayed silent, the fault is in its own output stage.", "ok");
+      } catch (e) {
+        if (e.name !== "NotFoundError") showStatus($("test-sound-status"), e.message, "error");
+        else showStatus($("test-sound-status"), "");
       }
     });
 

@@ -160,3 +160,33 @@ export async function gadgetSpeaker(port, want, { timeoutMs = 20000, retryMs = 2
   }
   return heard;
 }
+
+// Asks the gadget to play its built-in MP3 self-test (the console's "m"
+// key, esp32/components/muse/muse_input.c): a fully local decode through
+// the same audio write path the chat replies take, with no network in
+// between — so a silent test means the fault is in the gadget's own output
+// stage, and an audible one clears it. Nothing answers on the console, so
+// the listener is the confirmation; the key is sent twice in case the
+// first landed while the gadget was still booting after the port opened.
+export async function gadgetTestSound(port) {
+  try {
+    await port.open({ baudRate: 115200 });
+  } catch (e) {
+    throw new Error(`Couldn't open the port (${e.message}). Close the installer's dialog first.`);
+  }
+  await port.setSignals({ dataTerminalReady: false, requestToSend: false }).catch(() => {});
+  try {
+    await sleep(1000);   // a gadget restarted by the port opening boots first
+    for (let i = 0; i < 2; i++) {
+      const writer = port.writable.getWriter();
+      try {
+        await writer.write(new TextEncoder().encode("m"));
+      } finally {
+        writer.releaseLock();
+      }
+      if (i == 0) await sleep(2500);
+    }
+  } finally {
+    await port.close().catch(() => {});
+  }
+}
