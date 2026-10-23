@@ -339,10 +339,11 @@ static lv_display_t *display_start(lv_indev_t **touch)
     if (ledc_timer_config(&bl_timer) != ESP_OK || ledc_channel_config(&bl_ch) != ESP_OK) {
         return NULL;
     }
-    /* Backlight fully on from the start (the channel config leaves duty 0);
-     * muse_ui manages brightness from here via set_brightness(). */
-    ledc_set_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0, 1023);
-    ledc_update_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0);
+    /* The backlight stays OFF (the channel config leaves duty 0) until the
+     * panel holds the clean black frame painted below: lighting it earlier
+     * shows the panel's power-on GRAM garbage as a burst of snow. With the
+     * fill first, boot reads dark -> UI, the way the stock firmware did.
+     * muse_ui manages brightness from there via set_brightness(). */
 
 #if CONFIG_ESP_CONSOLE_SECONDARY_USB_SERIAL_JTAG
     ESP_LOGE(TAG, "console probe: SECONDARY USB Serial/JTAG is ON (steals LCD pins GPIO19/20)");
@@ -357,6 +358,10 @@ static lv_display_t *display_start(lv_indev_t **touch)
     /* Clear to black (no hold): a clean dark screen until the rebuilt
      * stack paints the UI. The debug-era colour bands are gone. */
     raw_fill_rows(0x0000, 0, LCD_H - 1);
+
+    /* First clean frame is on the panel: light it. */
+    ledc_set_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0, 1023);
+    ledc_update_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0);
 
     /* Hand-rolled LVGL bring-up (see the note above lv_flush_cb). */
     s_lv_lock = xSemaphoreCreateRecursiveMutex();
