@@ -1521,6 +1521,10 @@ static bool edge_tts_fetch(const char *text, const char *voice);
  * (see edge_pump below), so it needs a declaration here. */
 static void decode(void);
 
+/* edge_pump() is defined with the Edge fetch further down, but the fetch's
+ * receive loop (in the attempt helper above it) already calls it. */
+static void edge_pump(void);
+
 static void start_tts(void)
 {
     if (s_turn.tts_msg >= 0) {
