@@ -22,7 +22,8 @@ CONFIG_MUSE_BOARD_S3CAM_DIY=y
 
 # The LCD uses GPIO19/20, the chip's native USB pins, so the console and the
 # serial log go out the CH340 TTL port (UART0) instead of USB Serial/JTAG.
-CONFIG_MUSE_CONSOLE_UART=y
+# MUSE_CONSOLE_UART has no Kconfig prompt, so it cannot be set from here;
+# this board is in its default-y list in components/muse/Kconfig instead.
 
 CONFIG_ESPTOOLPY_FLASHMODE_DIO=y
 CONFIG_ESPTOOLPY_FLASHMODE="DIO"
