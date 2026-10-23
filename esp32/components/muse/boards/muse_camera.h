@@ -17,7 +17,7 @@
 extern "C" {
 #endif
 
-/* Double-click to open live preview, then tap the shutter or double-click again. */
+/* Opens or closes the live preview (the camera.preview command's verb). */
 void muse_camera_preview_toggle(void);
 bool muse_camera_preview_active(void);
 /* Captures one frame for the Home Link camera.capture command. */

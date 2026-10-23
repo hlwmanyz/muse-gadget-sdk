@@ -45,7 +45,7 @@
 #include "muse_ui.h"
 #include "muse_voice.h"
 #include "muse_wifi.h"
-#if CONFIG_MUSE_CAMERA
+#if CONFIG_MUSE_WATCHER_CAMERA
 #include "boards/muse_camera.h"
 #endif
 
@@ -236,12 +236,16 @@ static void talk_button(unsigned ev)
 {
     bool talk_down = s_talk_down;
     static bool swallow;
-#if CONFIG_MUSE_CAMERA
+#if CONFIG_MUSE_WATCHER_CAMERA
+    /* The Watcher's wheel double-click works the camera. Deliberately not
+     * generalized: on a board whose only button is the talk button (the
+     * DIY S3CAM) a double-click is indistinguishable from talking, so its
+     * preview is worked by the camera.preview command instead. */
     static TickType_t last_release;
     if ((ev & MUSE_BTN_TALK_PRESS) && !muse_state_asleep()
         && !muse_menu_is_open() && last_release
         && xTaskGetTickCount() - last_release <= pdMS_TO_TICKS(350)) {
-        ESP_LOGI(TAG, "double-click: camera preview/shutter");
+        ESP_LOGI(TAG, "wheel double-click: camera preview/shutter");
         last_release = 0;
         muse_camera_preview_toggle();
         swallow = true;
@@ -252,7 +256,7 @@ static void talk_button(unsigned ev)
     /* A quick tap can latch press and release in the same poll, and a release
      * can land just before the next press; keep them ordered. */
     bool released = ev & MUSE_BTN_TALK_RELEASE;
-#if CONFIG_MUSE_CAMERA
+#if CONFIG_MUSE_WATCHER_CAMERA
     bool saw_release = released;
 #endif
     if ((talk_down || swallow) && released) {
@@ -286,7 +290,7 @@ static void talk_button(unsigned ev)
         }
         talk_down = swallow = false;
     }
-#if CONFIG_MUSE_CAMERA
+#if CONFIG_MUSE_WATCHER_CAMERA
     if (saw_release && !swallow) {
         last_release = xTaskGetTickCount();
     }

@@ -1925,6 +1925,31 @@ static cJSON *on_ws_command(
         cJSON_AddBoolToObject(async, "_async", true);
         return async;
     }
+    if (strcmp(command, "camera.preview") == 0) {
+        bool active = muse_camera_preview_active();
+        bool want = !active;
+        char *state = json_strdup_string(params, "state");
+        if (state) {
+            if (strcmp(state, "on") == 0) {
+                want = true;
+            } else if (strcmp(state, "off") == 0) {
+                want = false;
+            } else {
+                free(state);
+                return command_error("invalid_argument",
+                                     "state must be \"on\" or \"off\"");
+            }
+            free(state);
+        }
+        /* The toggle is quick and doesn't block, so answer right away with
+         * the state being moved to. */
+        if (want != active) muse_camera_preview_toggle();
+        cJSON *result = cJSON_CreateObject();
+        cJSON_AddBoolToObject(result, "ok", true);
+        cJSON *payload = cJSON_AddObjectToObject(result, "payload");
+        cJSON_AddStringToObject(payload, "preview", want ? "on" : "off");
+        return result;
+    }
 #endif
 #if CONFIG_HOMEHUB_VOICE
     if (strcmp(command, "voice.configure") == 0) {

@@ -56,6 +56,12 @@ typedef struct {
      * powered meanwhile. Both NULL if it can't stream. */
     esp_err_t (*stream_start)(camera_frame_cb_t on_frame, void *ctx);
     void (*stream_stop)(void);
+    /* Powers the backend down after a capture (via camera_stop()) or a
+     * stream, so the next use starts it again. NULL if it should stay up.
+     * For a backend holding DMA buffers this matters beyond power: the
+     * control session will not send while DMA memory is scarce, so a
+     * capture result can only leave once the camera lets go. */
+    void (*stop)(void);
 } camera_driver_t;
 
 /* The board's camera; call before the first capture. */
@@ -71,6 +77,13 @@ const camera_driver_t *camera_get(void);
  */
 esp_err_t camera_capture(camera_frame_t *out);
 void camera_release(camera_frame_t *frame);
+
+/*
+ * Powers the backend down (its stop hook) after a capture has been
+ * released, or by itself when nothing is out. A stream stop powers down
+ * on its own. The next capture or stream starts the backend again.
+ */
+void camera_stop(void);
 
 /*
  * Calls on_frame with each frame until camera_stream_stop(), which returns

@@ -39,6 +39,21 @@ class LinkCameraTest(unittest.TestCase):
         dispatched = dispatch[dispatch.rindex(GATE, 0, at):dispatch.index("#endif", at)]
         self.assertIn("muse_camera_capture_task", dispatched)
 
+    def test_preview_command_is_advertised_and_dispatched_with_the_feature(self):
+        noise = (ROOT / "main/noise_control.cpp").read_text()
+        start = noise.index(GATE)
+        advertised = noise[start:noise.index("#endif", start)]
+        self.assertIn('add_command(commands, "camera.preview"', advertised)
+        self.assertIn('"state"', advertised)
+
+        app = (ROOT / "main/app.c").read_text()
+        start = app.index("static cJSON *on_ws_command(")
+        dispatch = app[start:app.index("unsupported command", start)]
+        at = dispatch.index('"camera.preview"')
+        dispatched = dispatch[dispatch.rindex(GATE, 0, at):dispatch.index("#endif", at)]
+        self.assertIn("muse_camera_preview_toggle()", dispatched)
+        self.assertIn("muse_camera_preview_active()", dispatched)
+
     def test_capture_task_calls_the_glue_under_the_same_gate(self):
         app = (ROOT / "main/app.c").read_text()
         start = app.index("static void muse_camera_capture_task(")

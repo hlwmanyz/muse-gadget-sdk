@@ -17,6 +17,7 @@
 #include "camera.h"
 #include "esp_heap_caps.h"
 #include "esp_log.h"
+#include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/idf_additions.h"
 #include "freertos/semphr.h"
@@ -30,12 +31,13 @@
 /*
  * The DIY S3CAM's camera.capture and live preview, on the board's camera
  * (components/camera; board_muse_s3cam_diy.c registers the OV2640). Same
- * shape as the Watcher's glue (boards/watcher_camera.c), with two board
- * differences: streamed frames are already the screen's 240x240, and there
- * is no touch, so the preview is worked entirely from the talk button --
- * double-click opens it, double-click again takes the photo and closes it.
- * The sensor is wired without PWDN, so it stays powered; frames are only
- * clocked out while a capture or the preview runs.
+ * shape as the Watcher's glue (boards/watcher_camera.c), with one board
+ * difference: streamed frames are already the screen's 240x240. The board
+ * has no touch and its one button is the talk button, so the preview is
+ * worked by the camera.preview command instead; a still can be taken with
+ * camera.capture at any time (during the preview it returns the frame on
+ * screen). The sensor is wired without PWDN, so it stays powered; frames
+ * are only clocked out while a capture or the preview runs.
  */
 
 static const char *TAG = "s3cam.camera";
@@ -44,6 +46,18 @@ static uint8_t *s_last;              /* the preview's newest frame, a JPEG */
 static size_t s_last_len;
 static atomic_bool s_preview_active;
 static atomic_bool s_busy;           /* a capture, or the preview starting or stopping */
+static esp_timer_handle_t s_preview_timer;   /* closes a forgotten preview */
+
+/* The preview is opened by command (camera.preview), not by a button on
+ * this board, so nothing local closes it: left alone it would hold the
+ * sensor (and its DMA buffers) forever. Give it a few minutes, then close
+ * it like a second toggle. */
+#define CAMERA_PREVIEW_TIMEOUT_US (180LL * 1000 * 1000)
+static void preview_timeout(void *arg)
+{
+    (void)arg;
+    if (s_preview_active) muse_camera_preview_toggle();
+}
 
 #define CAMERA_PREVIEW_SIZE 240
 #define CAMERA_JPEG_POOL 3100
@@ -127,7 +141,12 @@ static void on_frame(const camera_frame_t *frame, void *ctx)
 esp_err_t muse_camera_prepare(void)
 {
     if (!s_lock) s_lock = xSemaphoreCreateMutex();
-    return s_lock ? ESP_OK : ESP_ERR_NO_MEM;
+    if (!s_lock) return ESP_ERR_NO_MEM;
+    if (!s_preview_timer) {
+        const esp_timer_create_args_t args = { .callback = preview_timeout, .name = "cam_prev" };
+        esp_timer_create(&args, &s_preview_timer);   /* best effort: the preview still works without it */
+    }
+    return ESP_OK;
 }
 
 /* `jpeg` as base64, for camera.capture's result. */
@@ -164,6 +183,10 @@ static bool capture_frame(char **jpeg_base64, const char **error)
     }
     *jpeg_base64 = to_base64(frame.jpeg, frame.len);
     camera_release(&frame);
+    /* Power the sensor down before the result is queued: while it stays
+     * up, its DMA buffers keep DMA memory under the control session's
+     * send reserve and the result would never leave. */
+    camera_stop();
     *error = *jpeg_base64 ? NULL : "camera memory allocation failed";
     return *jpeg_base64 != NULL;
 }
@@ -189,10 +212,9 @@ static void preview_toggle_task(void *arg)
 {
     (void)arg;
     if (!s_preview_active) {
-        /* The view first, so the stream's first frames land on it. No touch
-         * here, so no shutter hint button: the caption says how to shoot. */
+        /* The view first, so the stream's first frames land on it. */
         s_preview_active = true;
-        muse_state_set_caption("LIVE VIEW • DOUBLE-CLICK TO TAKE PHOTO");
+        muse_state_set_caption("LIVE VIEW");
         muse_ui_image_hide();
         muse_board->display_lock(-1);
         muse_ui_show_face();
@@ -202,16 +224,23 @@ static void preview_toggle_task(void *arg)
             s_preview_active = false;
             ESP_LOGW(TAG, "preview didn't start: %s", esp_err_to_name(err));
             muse_state_set_caption(err == ESP_ERR_TIMEOUT ? "OV2640 CAMERA NOT READY" : "CAMERA PREVIEW FAILED");
+        } else if (s_preview_timer) {
+            esp_timer_start_once(s_preview_timer, CAMERA_PREVIEW_TIMEOUT_US);
         }
     } else {
+        if (s_preview_timer) esp_timer_stop(s_preview_timer);
         s_preview_active = false;
         camera_stream_stop();
         xSemaphoreTake(s_lock, portMAX_DELAY);
-        bool have_frame = s_last != NULL;
         free(s_last);
         s_last = NULL;
+        s_last_len = 0;
         xSemaphoreGive(s_lock);
-        muse_state_set_caption(have_frame ? "PHOTO CAPTURED" : "NO CAMERA FRAME • TRY AGAIN");
+        muse_ui_image_hide();
+        muse_board->display_lock(-1);
+        muse_ui_show_face();
+        muse_board->display_unlock();
+        muse_state_set_caption("PREVIEW OFF");
     }
     atomic_store(&s_busy, false);
     vTaskDeleteWithCaps(NULL);

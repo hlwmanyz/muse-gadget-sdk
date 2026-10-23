@@ -46,8 +46,14 @@ static bool s_size_set;
 
 static framesize_t still_size(void)
 {
-    return s_cfg.still_size ? (framesize_t)s_cfg.still_size : FRAMESIZE_VGA;
+    return s_cfg.still_size ? (framesize_t)s_cfg.still_size : FRAMESIZE_UXGA;
 }
+
+/* A still leaves as base64 in a command result: if the JPEG comes out
+ * larger than this, capture steps down the ladder rather than ship a
+ * result the link takes too long to carry. */
+#define STILL_BUDGET (192 * 1024)
+static const framesize_t s_still_ladder[] = { FRAMESIZE_UXGA, FRAMESIZE_XGA, FRAMESIZE_SVGA };
 
 static framesize_t stream_size(void)
 {
@@ -122,17 +128,50 @@ static esp_err_t set_size(framesize_t size)
 static esp_err_t ov2640_capture(camera_frame_t *out)
 {
     int64_t t0 = esp_timer_get_time();
-    ESP_RETURN_ON_ERROR(set_size(still_size()), TAG, "still size");
-    camera_fb_t *fb = esp_camera_fb_get();
-    ESP_RETURN_ON_FALSE(fb, ESP_ERR_TIMEOUT, TAG, "no frame");
-    out->jpeg = fb->buf;
-    out->len = fb->len;
-    out->width = fb->width;
-    out->height = fb->height;
-    out->priv = fb;
-    ESP_LOGI(TAG, "%dx%d JPEG, %u bytes in %lld ms", out->width, out->height, (unsigned)out->len,
-             (esp_timer_get_time() - t0) / 1000);
-    return ESP_OK;
+    /* Start at the configured size; if it's a ladder size and the JPEG
+     * busts the budget, step down and shoot again. */
+    size_t step = 0;
+    while (step < sizeof(s_still_ladder) / sizeof(s_still_ladder[0])
+           && s_still_ladder[step] != still_size()) {
+        step++;
+    }
+    bool laddered = step < sizeof(s_still_ladder) / sizeof(s_still_ladder[0]);
+    for (;;) {
+        framesize_t size = laddered ? s_still_ladder[step] : still_size();
+        ESP_RETURN_ON_ERROR(set_size(size), TAG, "still size");
+        camera_fb_t *fb = esp_camera_fb_get();
+        ESP_RETURN_ON_FALSE(fb, ESP_ERR_TIMEOUT, TAG, "no frame");
+        bool last = !laddered || step + 1 >= sizeof(s_still_ladder) / sizeof(s_still_ladder[0]);
+        if (fb->len <= STILL_BUDGET || last) {
+            out->jpeg = fb->buf;
+            out->len = fb->len;
+            out->width = fb->width;
+            out->height = fb->height;
+            out->priv = fb;
+            ESP_LOGI(TAG, "%dx%d JPEG, %u bytes in %lld ms", out->width, out->height,
+                     (unsigned)out->len, (esp_timer_get_time() - t0) / 1000);
+            return ESP_OK;
+        }
+        ESP_LOGI(TAG, "%dx%d JPEG is %u bytes, over the %u budget; stepping down",
+                 fb->width, fb->height, (unsigned)fb->len, (unsigned)STILL_BUDGET);
+        esp_camera_fb_return(fb);
+        step++;
+    }
+}
+
+/* Powers the sensor down after a capture or the preview: esp_camera holds
+ * its DMA buffers for as long as it is up, and the control session will
+ * not send a result while DMA memory is scarce — so the photo's result
+ * can only leave after this runs. The next use re-initializes (~1 s). */
+static void ov2640_stop(void)
+{
+    if (!s_inited) {
+        return;
+    }
+    esp_camera_deinit();
+    s_inited = false;
+    s_size_set = false;
+    ESP_LOGI(TAG, "OV2640 down");
 }
 
 static void ov2640_release(camera_frame_t *frame)
@@ -212,13 +251,14 @@ const camera_driver_t *camera_ov2640(const camera_ov2640_config_t *config)
     s_cfg = *config;
     s_driver = (camera_driver_t){
         .name = s_cfg.name,
-        .max_width = 640,
-        .max_height = 480,
+        .max_width = 1600,
+        .max_height = 1200,
         .init = ov2640_init,
         .capture = ov2640_capture,
         .release = ov2640_release,
         .stream_start = ov2640_stream_start,
         .stream_stop = ov2640_stream_stop,
+        .stop = ov2640_stop,
     };
     return &s_driver;
 }

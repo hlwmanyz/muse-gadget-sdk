@@ -1529,6 +1529,18 @@ static char *build_register_json(void) {
                 nullptr, nullptr);
     cJSON_AddNumberToObject(
         cJSON_GetObjectItem(commands, "camera.capture"), "timeout_ms", 30000);
+    cJSON *preview_optional = cJSON_CreateObject();
+    cJSON *state_param = cJSON_CreateObject();
+    cJSON_AddStringToObject(state_param, "type", "string");
+    cJSON_AddStringToObject(state_param, "description",
+                            "\"on\" opens the camera preview on the device's screen, "
+                            "\"off\" closes it; omit to toggle. It closes by itself "
+                            "after a few minutes.");
+    cJSON_AddItemToObject(preview_optional, "state", state_param);
+    add_command(commands, "camera.preview",
+                "Open or close the live camera preview on the device's screen. "
+                "Reports the state it was left in.",
+                nullptr, preview_optional);
 #endif
 
     if (ota_is_enabled()) {

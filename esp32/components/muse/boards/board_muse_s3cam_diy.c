@@ -23,7 +23,7 @@
  * (main/boards/bread-compact-wifi-s3cam/config.h). The OV2640 camera is
  * wired on its own bus (the CAM_* pins below, none of them shared with
  * the display, mic or amp); CONFIG_MUSE_S3CAM_CAMERA registers it for
- * the camera.capture command and the double-click preview.
+ * the camera.capture and camera.preview commands.
  *
  * The display occupies GPIO19/20, the S3's USB D+/D- pins, so the native
  * USB-Serial-JTAG console is unavailable; the console is UART0 behind the

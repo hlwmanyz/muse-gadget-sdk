@@ -108,4 +108,14 @@ void camera_stream_stop(void)
     s_driver->stream_stop();
     s_streaming = false;
     atomic_flag_clear(&s_busy);
+    camera_stop();
+}
+
+void camera_stop(void)
+{
+    const camera_driver_t *d = s_driver;
+    if (d && s_started && d->stop) {
+        d->stop();
+        s_started = false;   /* only a backend that powered down starts again */
+    }
 }
