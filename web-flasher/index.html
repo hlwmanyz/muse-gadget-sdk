@@ -179,6 +179,11 @@ limitations under the License.
         <input type="checkbox" id="speaker-toggle"> Speaker — play replies out loud
       </label>
       <p id="speaker-status" class="status"></p>
+      <p class="note" style="margin-top: 1rem;">
+        Firmware version on the gadget: <strong id="fw-version">not checked yet</strong>
+      </p>
+      <button id="fw-check" class="button secondary">Check firmware version</button>
+      <p id="fw-status" class="status"></p>
       <label class="field" for="tts-voice" style="margin-top: 1rem;">Voice — for spoken replies (Microsoft Edge TTS)</label>
       <select id="tts-voice">
         <option value="zh-CN-YunyangNeural">云扬 Yunyang — male, news anchor</option>
@@ -209,7 +214,7 @@ limitations under the License.
   <script type="module">
     import { installFlasherHooks } from "./flasher-hooks.js";
     import { installPacedSerial } from "./paced-serial.js";
-    import { isSdkToken, sendSdkToken, gadgetSpeaker, gadgetTestSound, gadgetTtsVoice } from "./sdk-token.js";
+    import { isSdkToken, sendSdkToken, gadgetSpeaker, gadgetTestSound, gadgetTtsVoice, gadgetFwVersion } from "./sdk-token.js";
 
     const $ = (id) => document.getElementById(id);
     const select = $("board");
@@ -411,6 +416,20 @@ limitations under the License.
       } catch (e) {
         if (e.name !== "NotFoundError") showStatus($("test-sound-status"), e.message, "error");
         else showStatus($("test-sound-status"), "");
+      }
+    });
+
+    $("fw-check").disabled = !pacing;
+    $("fw-check").addEventListener("click", async () => {
+      showStatus($("fw-status"), "Asking the gadget for its firmware version…");
+      try {
+        const port = await navigator.serial.requestPort();
+        const fw = await gadgetFwVersion(port);
+        $("fw-version").textContent = `v${fw}`;
+        showStatus($("fw-status"), "Confirmed by the gadget.", "ok");
+      } catch (e) {
+        if (e.name !== "NotFoundError") showStatus($("fw-status"), e.message, "error");
+        else showStatus($("fw-status"), "");
       }
     });
 

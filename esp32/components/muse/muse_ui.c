@@ -45,8 +45,8 @@
 #include "muse_state.h"
 #include "muse_text.h"
 #include "muse_wifi.h"
-#if CONFIG_MUSE_WATCHER_CAMERA
-#include "boards/watcher_camera.h"
+#if CONFIG_MUSE_CAMERA
+#include "boards/muse_camera.h"
 #endif
 
 static const char *TAG = "muse_ui";
@@ -139,7 +139,7 @@ static lv_obj_t *s_speaker;
 static lv_obj_t *s_speaker_icon;
 static lv_obj_t *s_aux_icon;
 static lv_obj_t *s_image;   /* display.draw_url, over the face */
-#if CONFIG_MUSE_WATCHER_CAMERA
+#if CONFIG_MUSE_CAMERA
 static lv_obj_t *s_camera_hint;
 #endif
 static lv_image_dsc_t s_image_dsc;  /* its data is set once the image is shown */
@@ -1069,20 +1069,20 @@ static void image_sync(void)
 static void on_image_clicked(lv_event_t *e)
 {
     (void)e;
-#if CONFIG_MUSE_WATCHER_CAMERA
-    if (watcher_camera_preview_active()) {
-        watcher_camera_preview_toggle();
+#if CONFIG_MUSE_CAMERA
+    if (muse_camera_preview_active()) {
+        muse_camera_preview_toggle();
         return;
     }
 #endif
     image_hide_locked();
 }
 
-#if CONFIG_MUSE_WATCHER_CAMERA
+#if CONFIG_MUSE_CAMERA
 static void on_camera_hint_clicked(lv_event_t *e)
 {
     (void)e;
-    if (watcher_camera_preview_active()) watcher_camera_preview_toggle();
+    if (muse_camera_preview_active()) muse_camera_preview_toggle();
 }
 #endif
 
@@ -1156,7 +1156,7 @@ static void build_overlays(void)
     lv_obj_set_pos(s_image, 0, 0);
     lv_obj_add_flag(s_image, LV_OBJ_FLAG_CLICKABLE | LV_OBJ_FLAG_HIDDEN);
     lv_obj_add_event_cb(s_image, on_image_clicked, LV_EVENT_CLICKED, NULL);
-#if CONFIG_MUSE_WATCHER_CAMERA
+#if CONFIG_MUSE_CAMERA
     s_camera_hint = lv_btn_create(scr);
     lv_obj_set_size(s_camera_hint, 244, 46);
     lv_obj_align(s_camera_hint, LV_ALIGN_BOTTOM_MID, 0, -20);
@@ -1799,13 +1799,13 @@ void muse_ui_image_hide(void)
     }
     muse_board->display_lock(-1);
     image_hide_locked();
-#if CONFIG_MUSE_WATCHER_CAMERA
+#if CONFIG_MUSE_CAMERA
     if (s_camera_hint) lv_obj_add_flag(s_camera_hint, LV_OBJ_FLAG_HIDDEN);
 #endif
     muse_board->display_unlock();
 }
 
-#if CONFIG_MUSE_WATCHER_CAMERA
+#if CONFIG_MUSE_CAMERA
 void muse_ui_camera_hint(bool visible)
 {
     if (!s_ready || !s_camera_hint) return;
