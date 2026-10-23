@@ -979,6 +979,13 @@ esp_err_t muse_voice_start(QueueHandle_t queue)
         muse_state_set_caption("AUDIO INIT FAILED");
         return ESP_FAIL;
     }
+#if CONFIG_MUSE_WAKEWORD
+    /* Load the wake-word model here, on the boot task's internal-RAM
+     * stack: loading maps the model partition, which freezes the flash
+     * cache, and ESP-IDF asserts rather than do that under a task whose
+     * stack is in PSRAM -- which the voice task's is (just below). */
+    muse_wakenet_init();
+#endif
     /* Stack in PSRAM if there is any (this task never writes flash) to spare internal RAM for Wi-Fi/BLE. */
     if (xTaskCreatePinnedToCoreWithCaps(voice_task, "muse_voice", 6144, NULL, 6, NULL, MUSE_AUDIO_CORE,
                                         MUSE_BIG_CAPS) != pdPASS) {

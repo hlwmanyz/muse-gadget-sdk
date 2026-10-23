@@ -25,15 +25,20 @@ extern "C" {
 #endif
 
 /*
- * The wake-word detector (Espressif WakeNet; CONFIG_MUSE_WAKEWORD). The
- * voice task feeds it the idle audio it already captures, one chunk at a
- * time, from that task only. feed() returns true exactly once per
+ * The wake-word detector (Espressif WakeNet; CONFIG_MUSE_WAKEWORD).
+ * init() loads the model once, at startup, and must be called from a
+ * task with an internal-RAM stack: loading maps the model partition,
+ * which freezes the flash cache, and ESP-IDF refuses that from a task
+ * whose stack lives in PSRAM (the voice task's does). The voice task
+ * then feeds the detector the idle audio it already captures, one chunk
+ * at a time, from that task only. feed() returns true exactly once per
  * detection, on the chunk that completes the word; afterwards it stays
  * quiet until reset(), so a word and the speech after it can't retrigger
  * while the turn it started is still being handled. If the model can't
  * load (no model partition flashed, say), feed() returns false forever
  * and the talk button is unaffected.
  */
+void muse_wakenet_init(void);
 bool muse_wakenet_feed(const int16_t *pcm, size_t samples);
 void muse_wakenet_reset(void);
 bool muse_wakenet_ready(void);

@@ -56,6 +56,11 @@ class WakeWordTest(unittest.TestCase):
         feed = voice.index("muse_wakenet_feed(s_chunk, MUSE_AUDIO_CHUNK)")
         self.assertIn(GATE, voice[:feed])
         self.assertIn("s_wake_speechless", voice)
+        # The model loads from muse_voice_start (the boot task, internal
+        # stack): loading maps flash, which a PSRAM-stack task may not do.
+        init = voice.index("muse_wakenet_init();")
+        self.assertLess(voice.index("muse_voice_start(QueueHandle_t"), init)
+        self.assertLess(init, voice.index("xTaskCreatePinnedToCoreWithCaps(voice_task"))
         header = (ROOT / "components/muse/muse_wakenet.h").read_text()
         self.assertIn("bool muse_wakenet_feed(", header)
 
