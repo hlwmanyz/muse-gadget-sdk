@@ -717,6 +717,19 @@ static bool console_command(char *line, bool whole)
         }
         return true;
     }
+    if (!strcmp(line, "heap")) {
+        /* DMA diagnostic probe: the same figures as the boot-time HEAP
+         * snapshots in app.c, on demand, so a subsystem's cost can be
+         * measured by toggling it between two probes. */
+        printf("@heap int=%uK/%uK dma=%uK/%uK psram=%uK\n",
+               (unsigned)(heap_caps_get_free_size(MALLOC_CAP_INTERNAL) / 1024),
+               (unsigned)(heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL) / 1024),
+               (unsigned)(heap_caps_get_free_size(MALLOC_CAP_DMA) / 1024),
+               (unsigned)(heap_caps_get_largest_free_block(MALLOC_CAP_DMA) / 1024),
+               (unsigned)(heap_caps_get_free_size(MALLOC_CAP_SPIRAM) / 1024));
+        fflush(stdout);
+        return true;
+    }
     bool reset = !strcmp(line, "power.reset");
     if (reset || !strcmp(line, "power")) {
         if (reset) {

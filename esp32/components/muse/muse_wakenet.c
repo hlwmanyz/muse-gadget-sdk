@@ -47,11 +47,22 @@ static int s_chunk;              /* samples per detect() call */
 static int s_fill;
 static bool s_hit;               /* fired; quiet until muse_wakenet_reset() */
 
+/* DMA diagnostic: bracket the load so its cost is one subtraction in the
+ * boot log (the app's HEAP snapshots cover the other subsystems). */
+static void log_heap(const char *when)
+{
+    ESP_LOGI(TAG, "heap %s: int=%uK dma=%uK psram=%uK", when,
+             (unsigned)(heap_caps_get_free_size(MALLOC_CAP_INTERNAL) / 1024),
+             (unsigned)(heap_caps_get_free_size(MALLOC_CAP_DMA) / 1024),
+             (unsigned)(heap_caps_get_free_size(MALLOC_CAP_SPIRAM) / 1024));
+}
+
 void muse_wakenet_init(void)
 {
     if (s_data || s_dead) {
         return;
     }
+    log_heap("before model load");
     srmodel_list_t *models = esp_srmodel_init("model");
     if (!models) {
         ESP_LOGW(TAG, "no model partition: wake word off, the talk button still works");
@@ -90,6 +101,7 @@ void muse_wakenet_init(void)
              words ? words : name, name, s_chunk);
     free(words);
     /* srmodel_list_t itself stays: the model data points into it. */
+    log_heap("after model load");
 }
 
 bool muse_wakenet_ready(void)
