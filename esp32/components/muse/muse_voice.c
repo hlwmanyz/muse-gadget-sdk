@@ -903,6 +903,10 @@ static void voice_task(void *arg)
             if (s_wake_hit) {
                 s_wake_hit = false;
                 voice_wake = true;
+                /* A press wakes the screen on its way through the input
+                 * layer; the word comes through here instead, so wake it
+                 * here or the whole turn happens in the dark. */
+                muse_state_set_asleep(false);
                 muse_state_poke();
                 ESP_LOGI(TAG, "wake word: listening");
             } else

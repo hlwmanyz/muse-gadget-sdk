@@ -61,6 +61,10 @@ class WakeWordTest(unittest.TestCase):
         init = voice.index("muse_wakenet_init();")
         self.assertLess(voice.index("muse_voice_start(QueueHandle_t"), init)
         self.assertLess(init, voice.index("xTaskCreatePinnedToCoreWithCaps(voice_task"))
+        # A hit wakes the screen like a press does (the input layer owns
+        # that for presses; the word bypasses it).
+        hit = voice.index("s_wake_hit = false;")
+        self.assertIn("muse_state_set_asleep(false)", voice[hit:hit + 600])
         header = (ROOT / "components/muse/muse_wakenet.h").read_text()
         self.assertIn("bool muse_wakenet_feed(", header)
 
