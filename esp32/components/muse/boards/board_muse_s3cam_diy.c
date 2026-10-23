@@ -25,7 +25,8 @@
  *
  * The display occupies GPIO19/20, the S3's USB D+/D- pins, so the native
  * USB-Serial-JTAG console is unavailable; the console is UART0 behind the
- * board's USB-UART bridge (CONFIG_MUSE_CONSOLE_UART=y in the overlay).
+ * board's USB-UART bridge (MUSE_CONSOLE_UART: this board is in its
+ * default-y list in components/muse/Kconfig).
  *
  * Audio: two simplex I2S ports, because the mic and speaker have separate
  * clocks (the speaker on port 0, the mic on port 1, as xiaozhi's
@@ -40,7 +41,6 @@
 #include "driver/i2s_std.h"
 #include "driver/ledc.h"
 #include "driver/spi_master.h"
-#include "driver/uart.h"
 #include "esp_check.h"
 #include "esp_codec_dev.h"
 #include "driver/gpio.h"
@@ -259,19 +259,8 @@ static int32_t s_mic_dc[2];            /* each slot's zero level, x256 */
 
 static esp_err_t init(void)
 {
-    /* The console is UART0 behind the board's USB-UART bridge (TX GPIO43,
-     * RX GPIO44, the S3 defaults). The console driver installs without
-     * touching the pin matrix, so assert the routing here at board
-     * bring-up: with the RX pin routed elsewhere the console still prints
-     * (TX keeps its own default) but never hears a byte, and the web
-     * flasher's SDK-token send goes exactly as silently unanswered as it
-     * did on this board. Also log whether the UART driver already exists
-     * this early; the console reader installs it later, in muse_input. */
-    ESP_LOGI(TAG, "console: UART0 driver %s at board init",
-             uart_is_driver_installed(UART_NUM_0) ? "installed" : "not installed");
-    ESP_RETURN_ON_ERROR(uart_set_pin(UART_NUM_0, GPIO_NUM_43, GPIO_NUM_44,
-                                     UART_PIN_NO_CHANGE, UART_PIN_NO_CHANGE),
-                        TAG, "console UART pins");
+    /* The serial console is UART0 (the CH340 port): this board is in
+     * the MUSE_CONSOLE_UART default-y list in components/muse/Kconfig. */
     ESP_RETURN_ON_ERROR(muse_gpio_button_init(&s_talk, TALK_GPIO), TAG, "talk button");
     /* Held at reset to get here from the bootloader; don't count that as a press. */
     s_talk.pressed = gpio_get_level(TALK_GPIO) == 0;
@@ -280,7 +269,6 @@ static esp_err_t init(void)
 
 static bool display_lock(int timeout_ms);
 static void display_unlock(void);
-static void rebuild_task(void *arg);
 
 static lv_display_t *display_start(lv_indev_t **touch)
 {
@@ -356,7 +344,6 @@ static lv_display_t *display_start(lv_indev_t **touch)
     }
     ESP_LOGI(TAG, "LVGL up (hand-rolled port): %dx%d, 2 x %d-line PSRAM buffers",
              LCD_W, LCD_H, DRAW_BUF_LINES);
-    xTaskCreate(rebuild_task, "disp_rebuild", 4096, NULL, 5, NULL);
     return disp;
 }
 
@@ -376,80 +363,13 @@ static void display_unlock(void)
     }
 }
 
-/* The SPI bus created at display_start silently stops reaching the
- * panel within the first seconds of boot (the black clear, painted at
- * ~1 s, is the last thing it ever delivers; every call still returns
- * ESP_OK). The v12 layer-cake probe (2026-10-22) localized it to the
- * bus itself: re-initializing the panel (P2) and replacing the device
- * handle (P3) changed nothing, while freeing and re-initializing the
- * bus (P4) revived the path for good and LVGL has painted through it
- * ever since. So: 3 s after the display starts (past the measured death
- * window, which closes by ~3 s absolute), rebuild the whole
- * display stack once, under the display lock, and force a full LVGL
- * repaint. The screen is black until then, which the link
- * setup outlasts anyway. */
-static void panel_hw_reset_and_init(void)
-{
-    gpio_set_level(LCD_RST, 1);
-    vTaskDelay(pdMS_TO_TICKS(10));
-    gpio_set_level(LCD_RST, 0);
-    vTaskDelay(pdMS_TO_TICKS(10));
-    gpio_set_level(LCD_RST, 1);
-    vTaskDelay(pdMS_TO_TICKS(120));
-    raw_cmd(0x01, NULL, 0);   /* SWRESET */
-    vTaskDelay(pdMS_TO_TICKS(150));
-    raw_cmd(0x11, NULL, 0);   /* SLPOUT */
-    vTaskDelay(pdMS_TO_TICKS(120));
-    static const uint8_t colmod[] = { 0x55 };
-    raw_cmd(0x3A, colmod, sizeof(colmod));
-    static const uint8_t madctl[] = { 0x00 };
-    raw_cmd(0x36, madctl, sizeof(madctl));
-    raw_cmd(0x21, NULL, 0);   /* INVON */
-    raw_cmd(0x13, NULL, 0);   /* NORON */
-    raw_cmd(0x29, NULL, 0);   /* DISPON */
-}
-
-static void rebuild_task(void *arg)
-{
-    (void)arg;
-    vTaskDelay(pdMS_TO_TICKS(3000));
-    /* By now muse_input has started: its console reader must have installed
-     * the UART0 driver, or the console hears nothing (see init). */
-    ESP_LOGI(TAG, "console: UART0 driver %s at rebuild",
-             uart_is_driver_installed(UART_NUM_0) ? "installed" : "not installed");
-    if (!display_lock(-1)) {
-        vTaskDelete(NULL);
-        return;
-    }
-    const esp_err_t rc_rm = spi_bus_remove_device(s_raw_dev);
-    const esp_err_t rc_free = spi_bus_free(LCD_HOST);
-    const spi_bus_config_t bus = {
-        .sclk_io_num = LCD_SCLK,
-        .mosi_io_num = LCD_MOSI,
-        .miso_io_num = GPIO_NUM_NC,
-        .quadwp_io_num = GPIO_NUM_NC,
-        .quadhd_io_num = GPIO_NUM_NC,
-        .max_transfer_sz = LCD_W * 32 * 2,
-    };
-    const esp_err_t rc_bus = spi_bus_initialize(LCD_HOST, &bus, SPI_DMA_CH_AUTO);
-    esp_err_t rc_add = ESP_FAIL;
-    if (rc_bus == ESP_OK) {
-        const spi_device_interface_config_t raw_cfg = {
-            .mode = 0,
-            .clock_speed_hz = 10 * 1000 * 1000,
-            .spics_io_num = LCD_CS,
-            .queue_size = 1,
-        };
-        rc_add = spi_bus_add_device(LCD_HOST, &raw_cfg, &s_raw_dev);
-    }
-    panel_hw_reset_and_init();
-    lv_obj_invalidate(lv_screen_active());
-    ESP_LOGI(TAG, "display stack rebuilt: rm=%s free=%s bus=%s add=%s",
-             esp_err_to_name(rc_rm), esp_err_to_name(rc_free),
-             esp_err_to_name(rc_bus), esp_err_to_name(rc_add));
-    display_unlock();
-    vTaskDelete(NULL);
-}
+/* No display-stack rebuild is needed any more. Until v17 the SPI bus
+ * silently stopped reaching the panel a few seconds into boot and only
+ * a full bus rebuild revived it; the cause was the serial console
+ * compiling for USB Serial/JTAG (this board was missing from the
+ * MUSE_CONSOLE_UART default list), whose driver grabbed GPIO19/20 --
+ * the LCD clock/data pins -- when muse_input started. With the console
+ * on UART0 the bus is never disturbed and the UI paints from boot. */
 
 static void set_brightness(int pct)
 {
