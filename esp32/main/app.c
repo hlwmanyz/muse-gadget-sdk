@@ -30,7 +30,7 @@
 #include "cJSON.h"
 
 #include "esp_heap_caps.h"
-#if CONFIG_MUSE_WATCHER_CAMERA
+#if CONFIG_MUSE_CAMERA
 #include "freertos/idf_additions.h"
 #endif
 #include "esp_timer.h"
@@ -76,8 +76,8 @@
 #if CONFIG_HOMEHUB_RETERMINAL_SHT4X
 #include "reterminal_sht4x.h"
 #endif
-#if CONFIG_MUSE_WATCHER_CAMERA
-#include "boards/watcher_camera.h"
+#if CONFIG_MUSE_CAMERA
+#include "boards/muse_camera.h"
 #endif
 #if CONFIG_MUSE_ENABLED
 #include "muse_glue.h"
@@ -1574,18 +1574,18 @@ static void draw_url_done(const image_fetch_result_t *r, void *user) {
 }
 #endif
 
-#if CONFIG_MUSE_WATCHER_CAMERA
+#if CONFIG_MUSE_CAMERA
 typedef struct {
     noise_ctrl_session_generation_t session_generation;
     char request_id[64];
-} watcher_camera_task_args_t;
+} muse_camera_task_args_t;
 
-static void watcher_camera_capture_task(void *arg) {
-    watcher_camera_task_args_t *args = arg;
+static void muse_camera_capture_task(void *arg) {
+    muse_camera_task_args_t *args = arg;
     char *image = NULL;
     const char *error = NULL;
     cJSON *result = cJSON_CreateObject();
-    bool ok = watcher_camera_capture(&image, &error);
+    bool ok = muse_camera_capture(&image, &error);
     cJSON_AddBoolToObject(result, "ok", ok);
     if (ok) {
         cJSON *payload = cJSON_AddObjectToObject(result, "payload");
@@ -1877,19 +1877,25 @@ static cJSON *on_ws_command(
         return queue_ws_control(WS_CONTROL_SET_VM, url);
     }
 #if CONFIG_HOMEHUB_DISPLAY_COMMANDS
-    if (strcmp(command, "display.draw_url") == 0) {
-        cJSON *url = cJSON_GetObjectItem(params, "url");
+    bool draw_file = strcmp(command, "display.draw_file") == 0;
+    if (draw_file || strcmp(command, "display.draw_url") == 0) {
+        // draw_file takes a path on the VM, fetched over this session.
+        cJSON *target = cJSON_GetObjectItem(params, draw_file ? "path" : "url");
         cJSON *row = cJSON_GetObjectItem(params, "row");
-        if (!cJSON_IsString(url) || !url->valuestring || !url->valuestring[0]) {
-            return command_error("missing_param", "url is required");
+        if (!cJSON_IsString(target) || !target->valuestring || !target->valuestring[0]) {
+            return command_error("missing_param",
+                                 draw_file ? "path is required" : "url is required");
         }
         draw_url_ctx_t *ctx = calloc(1, sizeof(*ctx));
         if (!ctx) return command_error("out_of_memory", "failed to allocate");
         ctx->session_generation = session_generation;
         strncpy(ctx->request_id, request_id, sizeof(ctx->request_id) - 1);
         const char *code, *message;
-        if (!image_fetch_start(url->valuestring, cJSON_IsNumber(row) ? row->valueint : IMAGE_FETCH_DEFAULT_ROW,
-                               draw_url_done, ctx, &code, &message)) {
+        int top = cJSON_IsNumber(row) ? row->valueint : IMAGE_FETCH_DEFAULT_ROW;
+        bool started = draw_file
+            ? image_fetch_start_vm(target->valuestring, top, draw_url_done, ctx, &code, &message)
+            : image_fetch_start(target->valuestring, top, draw_url_done, ctx, &code, &message);
+        if (!started) {
             free(ctx);
             return command_error(code, message);
         }
@@ -1904,13 +1910,13 @@ static cJSON *on_ws_command(
         return result;
     }
 #endif
-#if CONFIG_MUSE_WATCHER_CAMERA
+#if CONFIG_MUSE_CAMERA
     if (strcmp(command, "camera.capture") == 0) {
-        watcher_camera_task_args_t *args = calloc(1, sizeof(*args));
+        muse_camera_task_args_t *args = calloc(1, sizeof(*args));
         if (!args) return command_error("out_of_memory", "failed to allocate camera request");
         args->session_generation = session_generation;
         strncpy(args->request_id, request_id, sizeof(args->request_id) - 1);
-        if (xTaskCreateWithCaps(watcher_camera_capture_task, "camera_capture", 8192,
+        if (xTaskCreateWithCaps(muse_camera_capture_task, "camera_capture", 8192,
                                 args, 4, NULL, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT) != pdPASS) {
             free(args);
             return command_error("out_of_memory", "failed to start camera capture");

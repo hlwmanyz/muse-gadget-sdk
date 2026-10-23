@@ -1517,6 +1517,10 @@ static void on_chat_ack(stream_t *s)
  * failure returns false and start_tts falls back to silent pacing. */
 static bool edge_tts_fetch(const char *text, const char *voice);
 
+/* decode() is defined further down; the Edge fetch pumps it while streaming
+ * (see edge_pump below), so it needs a declaration here. */
+static void decode(void);
+
 static void start_tts(void)
 {
     if (s_turn.tts_msg >= 0) {
@@ -1544,9 +1548,10 @@ static void start_tts(void)
          */
         /*
          * Fork addition: with the speaker on, actually speak the reply —
-         * the integration the comment above prescribes. The MP3 is fetched
-         * whole before playback starts (decode() then drains it as usual);
-         * any failure falls through to the stock silent pacing below.
+         * the integration the comment above prescribes. The fetch streams:
+         * it pumps decode() as the MP3 arrives, so playback starts on the
+         * first frames instead of after the whole download (see edge_pump).
+         * Any failure falls through to the stock silent pacing below.
          */
         if (muse_settings_speaker_on() && s_turn.texts && s_turn.texts[i * TEXT_MAX]) {
             m.pcm_start = s_turn.pcm_out;
@@ -1561,11 +1566,15 @@ static void start_tts(void)
             mp3dec_init(&s_turn.dec);
             char voice[MUSE_TTS_VOICE_MAX + 1];
             muse_settings_tts_voice(voice);
+            /* Captions start with the speech, not after the download: the
+             * fetch streams (edge_pump), so show the reply before it runs.
+             * show_reply_start dedupes, so the silent fallback below calling
+             * it again after a failed fetch is a no-op. */
+            show_reply_start(m);
             if (edge_tts_fetch(s_turn.texts + i * TEXT_MAX, voice[0] ? voice : "zh-CN-YunyangNeural")) {
                 s_turn.mp3_ended = true;
                 ESP_LOGI(TAG, "speaking message %s (Edge TTS, %s, %u bytes of MP3)", m.id,
                          voice[0] ? voice : "zh-CN-YunyangNeural", (unsigned)s_turn.mp3_len);
-                show_reply_start(m);
                 return;
             }
             ESP_LOGW(TAG, "Edge TTS failed for message %s; showing it silently", m.id);
@@ -2218,6 +2227,10 @@ static int edge_tts_attempt(const char *text, const char *voice, int64_t now_uni
                     if (hlen <= 4096 && 2 + hlen < (size_t)n) {
                         tts_data(frame + 2 + hlen, n - 2 - hlen);
                         bytes += (size_t)n - 2 - hlen;
+                        edge_pump();   /* start/keep the speech playing while the rest downloads */
+                    } else if (hlen <= 4096 && 2 + hlen == (size_t)n) {
+                        /* Header-only frame: the server sends one at the end
+                         * of the audio. No bytes, not an error. */
                     } else {
                         ESP_LOGW(TAG, "Edge TTS: odd audio frame (hlen %u of %d)", (unsigned)hlen, (int)n);
                     }
@@ -2269,6 +2282,26 @@ static int64_t edge_http_date(const char *head)
     int64_t doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
     int64_t days = era * 146097 + doe - 719468;
     return days * 86400 + hh * 3600 + mm * 60 + ss;
+}
+
+/* Streaming playback pump, called from the fetch's receive loop. The fetch
+ * runs on the chat task, so the session loop that normally calls decode()
+ * after start_tts() is parked inside the fetch; pumping decode() here is
+ * what starts the speech on the first frames instead of after the whole
+ * download. decode() is built for repeated calls: it decodes what's
+ * buffered (holding back the tail frame until mp3_ended) and stops when
+ * the PCM stream buffer is full, while the voice task drains that buffer
+ * to the speaker in real time. If the MP3 buffer still runs near full (a
+ * long reply arriving much faster than it plays), wait on decode() so TCP
+ * back-pressure paces the server instead of tts_data() dropping bytes. */
+static void edge_pump(void)
+{
+    decode();
+    int64_t give_up = now_us() + 5000000;
+    while (s_turn.mp3_len > MP3_BUF - 16384 && now_us() < give_up) {
+        vTaskDelay(pdMS_TO_TICKS(20));
+        decode();
+    }
 }
 
 static bool edge_tts_fetch(const char *text, const char *voice)

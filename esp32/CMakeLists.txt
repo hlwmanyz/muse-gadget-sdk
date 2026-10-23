@@ -14,5 +14,10 @@
 
 cmake_minimum_required(VERSION 3.16)
 include("${CMAKE_CURRENT_LIST_DIR}/cmake/project.cmake")
+# Release version of this fork's firmware. Surfaces as
+# esp_app_get_description()->version: the gadget's settings screen and
+# menu, the "@status" reply's "fw" field (which the flasher page shows
+# in Gadget settings), and the boot log. Bump on every release.
+set(PROJECT_VER "20.0")
 project(muse-gadget)
 include("${CMAKE_CURRENT_LIST_DIR}/cmake/validate_config.cmake")
