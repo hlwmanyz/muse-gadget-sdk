@@ -258,6 +258,72 @@ export async function gadgetFwVersion(port, { timeoutMs = 20000, retryMs = 2500 
   return heard;
 }
 
+// Reads the gadget's memory figures over the same console channel: the
+// ">heap" command's "@heap" reply (internal / DMA / PSRAM free), for the
+// DMA diagnostic. Returns the reply's figures as printed by the gadget.
+export async function gadgetHeap(port, { timeoutMs = 20000, retryMs = 2500 } = {}) {
+  try {
+    await port.open({ baudRate: 115200 });
+  } catch (e) {
+    throw new Error(`Couldn't open the port (${e.message}). Close the installer's dialog first.`);
+  }
+  await port.setSignals({ dataTerminalReady: false, requestToSend: false }).catch(() => {});
+
+  const reader = port.readable.getReader();
+  let heard = null;
+  const reading = (async () => {
+    const decoder = new TextDecoder();
+    let text = "";
+    for (;;) {
+      const { value, done } = await reader.read();
+      if (done) return;
+      text += decoder.decode(value, { stream: true });
+      let nl;
+      while ((nl = text.indexOf("\n")) >= 0) {
+        const line = text.slice(0, nl).replace(/\r$/, "");
+        text = text.slice(nl + 1);
+        if (line.startsWith("@heap ")) heard = line.slice("@heap ".length);
+      }
+    }
+  })().catch(() => {});
+
+  const write = async (s) => {
+    const writer = port.writable.getWriter();
+    try {
+      await writer.write(new TextEncoder().encode(s));
+    } finally {
+      writer.releaseLock();
+    }
+  };
+
+  try {
+    const deadline = Date.now() + timeoutMs;
+    await sleep(1000);
+    while (Date.now() < deadline) {
+      await write("\n>heap\n");
+      const wait = Date.now() + retryMs;
+      while (Date.now() < wait) {
+        if (heard !== null) break;
+        await sleep(100);
+      }
+      if (heard !== null) break;
+    }
+  } finally {
+    await reader.cancel().catch(() => {});
+    await reading;
+    reader.releaseLock();
+    await port.close().catch(() => {});
+  }
+
+  if (heard === null) {
+    throw new Error(
+      "The gadget didn't answer. Check it runs firmware from this page and you picked its console port. " +
+        "If it still doesn't answer, unplug it, plug it back in and try again.",
+    );
+  }
+  return heard;
+}
+
 // Reads and sets the gadget's Edge TTS voice over the same console channel
 // as the speaker switch: ">tts.voice=<name>" writes it, and the "@status"
 // reply's "tts_voice" field confirms what the gadget stored — the page only

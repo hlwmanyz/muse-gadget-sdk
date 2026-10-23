@@ -184,6 +184,8 @@ limitations under the License.
       </p>
       <button id="fw-check" class="button secondary">Check firmware version</button>
       <p id="fw-status" class="status"></p>
+      <button id="heap-check" class="button secondary">Check memory (DMA diagnostic)</button>
+      <p id="heap-status" class="status"></p>
       <label class="field" for="tts-voice" style="margin-top: 1rem;">Voice — for spoken replies (Microsoft Edge TTS)</label>
       <select id="tts-voice">
         <option value="zh-CN-YunyangNeural">云扬 Yunyang — male, news anchor</option>
@@ -214,7 +216,7 @@ limitations under the License.
   <script type="module">
     import { installFlasherHooks } from "./flasher-hooks.js";
     import { installPacedSerial } from "./paced-serial.js";
-    import { isSdkToken, sendSdkToken, gadgetSpeaker, gadgetTestSound, gadgetTtsVoice, gadgetFwVersion } from "./sdk-token.js";
+    import { isSdkToken, sendSdkToken, gadgetSpeaker, gadgetTestSound, gadgetTtsVoice, gadgetFwVersion, gadgetHeap } from "./sdk-token.js";
 
     const $ = (id) => document.getElementById(id);
     const select = $("board");
@@ -430,6 +432,19 @@ limitations under the License.
       } catch (e) {
         if (e.name !== "NotFoundError") showStatus($("fw-status"), e.message, "error");
         else showStatus($("fw-status"), "");
+      }
+    });
+
+    $("heap-check").disabled = !pacing;
+    $("heap-check").addEventListener("click", async () => {
+      showStatus($("heap-status"), "Asking the gadget for its memory figures…");
+      try {
+        const port = await navigator.serial.requestPort();
+        const heap = await gadgetHeap(port);
+        showStatus($("heap-status"), heap, "ok");
+      } catch (e) {
+        if (e.name !== "NotFoundError") showStatus($("heap-status"), e.message, "error");
+        else showStatus($("heap-status"), "");
       }
     });
 
