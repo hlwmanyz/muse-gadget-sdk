@@ -149,7 +149,7 @@ const muse_ptest_state_t *muse_ptest_board_matrix(const char *name, size_t *coun
 #include "hal/i2c_periph.h"
 #include "soc/spi_periph.h"
 #if CONFIG_MUSE_WATCHER_CAMERA
-#include "boards/watcher_camera.h"
+#include "boards/muse_camera.h"
 #include "camera.h"
 #include "camera_sscma.h"
 #endif
@@ -392,7 +392,7 @@ static esp_err_t init(void)
     ESP_RETURN_ON_ERROR(exp_set(EXP_RAILS, true), TAG, "rails");
     vTaskDelay(pdMS_TO_TICKS(50));
 #if CONFIG_MUSE_WATCHER_CAMERA
-    ESP_RETURN_ON_ERROR(watcher_camera_prepare(), TAG, "camera lock");
+    ESP_RETURN_ON_ERROR(muse_camera_prepare(), TAG, "camera lock");
     /* Reset stays untouched, as before: powering the camera up resets it. */
     const camera_sscma_config_t cam = {
         .name = "Himax WiseEye2 (SenseCAP Watcher)",

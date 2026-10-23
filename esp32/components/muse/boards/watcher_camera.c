@@ -8,13 +8,13 @@
  *     http://www.apache.org/licenses/LICENSE-2.0
  */
 
-#include "watcher_camera.h"
+#include "muse_camera.h"
 
 #include <stdlib.h>
 #include <stdatomic.h>
 #include <string.h>
 
-#include "watcher_camera.h"
+#include "muse_camera.h"
 
 #include <stdatomic.h>
 #include <stdlib.h>
@@ -125,7 +125,7 @@ static void on_frame(const camera_frame_t *frame, void *ctx)
     preview_draw(frame->jpeg, frame->len);
 }
 
-esp_err_t watcher_camera_prepare(void)
+esp_err_t muse_camera_prepare(void)
 {
     if (!s_lock) s_lock = xSemaphoreCreateMutex();
     return s_lock ? ESP_OK : ESP_ERR_NO_MEM;
@@ -169,11 +169,11 @@ static bool capture_frame(char **jpeg_base64, const char **error)
     return *jpeg_base64 != NULL;
 }
 
-bool watcher_camera_capture(char **jpeg_base64, const char **error)
+bool muse_camera_capture(char **jpeg_base64, const char **error)
 {
     if (!jpeg_base64 || !error) return false;
     *jpeg_base64 = NULL;
-    if (watcher_camera_prepare() != ESP_OK) {
+    if (muse_camera_prepare() != ESP_OK) {
         *error = "camera memory allocation failed";
         return false;
     }
@@ -220,14 +220,14 @@ static void preview_toggle_task(void *arg)
     vTaskDeleteWithCaps(NULL);
 }
 
-bool watcher_camera_preview_active(void)
+bool muse_camera_preview_active(void)
 {
     return s_preview_active;
 }
 
-void watcher_camera_preview_toggle(void)
+void muse_camera_preview_toggle(void)
 {
-    if (watcher_camera_prepare() != ESP_OK) {
+    if (muse_camera_prepare() != ESP_OK) {
         muse_state_set_caption("CAMERA MEMORY ERROR");
         return;
     }

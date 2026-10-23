@@ -21,7 +21,9 @@
  * (unused: status shows on the display). No codec chip, no battery.
  * Pins follow xiaozhi-esp32's bread-compact-wifi-s3cam board
  * (main/boards/bread-compact-wifi-s3cam/config.h). The OV2640 camera is
- * wired but not used by this port (v1).
+ * wired on its own bus (the CAM_* pins below, none of them shared with
+ * the display, mic or amp); CONFIG_MUSE_S3CAM_CAMERA registers it for
+ * the camera.capture command and the double-click preview.
  *
  * The display occupies GPIO19/20, the S3's USB D+/D- pins, so the native
  * USB-Serial-JTAG console is unavailable; the console is UART0 behind the
@@ -56,6 +58,10 @@
 #include "muse_audio.h"
 #include "muse_board.h"
 #include "muse_mem.h"
+#if CONFIG_MUSE_S3CAM_CAMERA
+#include "camera.h"
+#include "camera_ov2640.h"
+#endif
 
 static const char *TAG = "board";
 
@@ -79,6 +85,25 @@ static const char *TAG = "board";
 #define MIC_DIN GPIO_NUM_42
 
 #define TALK_GPIO GPIO_NUM_0  /* BOOT */
+
+#if CONFIG_MUSE_S3CAM_CAMERA
+/* OV2640 (xiaozhi's pin map): PWDN and RESET are not wired, and the lamp
+ * on GPIO14 isn't used. */
+#define CAM_XCLK GPIO_NUM_15
+#define CAM_PCLK GPIO_NUM_13
+#define CAM_VSYNC GPIO_NUM_6
+#define CAM_HREF GPIO_NUM_7
+#define CAM_SIOC GPIO_NUM_5   /* SCCB clock */
+#define CAM_SIOD GPIO_NUM_4   /* SCCB data */
+#define CAM_D0 GPIO_NUM_11
+#define CAM_D1 GPIO_NUM_9
+#define CAM_D2 GPIO_NUM_8
+#define CAM_D3 GPIO_NUM_10
+#define CAM_D4 GPIO_NUM_12
+#define CAM_D5 GPIO_NUM_18
+#define CAM_D6 GPIO_NUM_17
+#define CAM_D7 GPIO_NUM_16
+#endif
 
 /* An INMP441 is about -26 dBFS at 94 dB SPL; Muse's default 30 dB of gain
  * brings speech up to where the ES8311 boards have it. */
@@ -264,6 +289,30 @@ static esp_err_t init(void)
     ESP_RETURN_ON_ERROR(muse_gpio_button_init(&s_talk, TALK_GPIO), TAG, "talk button");
     /* Held at reset to get here from the bootloader; don't count that as a press. */
     s_talk.pressed = gpio_get_level(TALK_GPIO) == 0;
+#if CONFIG_MUSE_S3CAM_CAMERA
+    /* Registered only: the backend starts the sensor on the first capture
+     * or preview (components/camera). */
+    static const camera_ov2640_config_t cam = {
+        .name = "OV2640 (DIY S3CAM)",
+        .xclk = CAM_XCLK,
+        .pclk = CAM_PCLK,
+        .vsync = CAM_VSYNC,
+        .href = CAM_HREF,
+        .sccb_sda = CAM_SIOD,
+        .sccb_scl = CAM_SIOC,
+        .d0 = CAM_D0,
+        .d1 = CAM_D1,
+        .d2 = CAM_D2,
+        .d3 = CAM_D3,
+        .d4 = CAM_D4,
+        .d5 = CAM_D5,
+        .d6 = CAM_D6,
+        .d7 = CAM_D7,
+        .pwdn = -1,
+        .reset = -1,
+    };
+    camera_register(camera_ov2640(&cam));
+#endif
     return ESP_OK;
 }
 

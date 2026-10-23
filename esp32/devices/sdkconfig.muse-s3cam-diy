@@ -19,6 +19,7 @@
 # Load last, after sdkconfig.muse.
 CONFIG_IDF_TARGET="esp32s3"
 CONFIG_MUSE_BOARD_S3CAM_DIY=y
+CONFIG_MUSE_S3CAM_CAMERA=y
 
 # The LCD uses GPIO19/20, the chip's native USB pins, so the console and the
 # serial log go out the CH340 TTL port (UART0) instead of USB Serial/JTAG.
