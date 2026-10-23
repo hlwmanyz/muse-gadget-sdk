@@ -49,8 +49,13 @@
 #include <cstring>
 #include <new>
 
+#include <ctime>
+
 #include "esp_attr.h"
 #include "esp_crt_bundle.h"
+#include "esp_netif_sntp.h"
+#include "mbedtls/base64.h"
+#include "mbedtls/sha256.h"
 #include "esp_heap_caps.h"
 #include "esp_log.h"
 #include "esp_random.h"
@@ -1508,6 +1513,11 @@ static void on_chat_ack(stream_t *s)
 
 /* ---- Turn: speech ---- */
 
+/* Fetches this message's speech as MP3 from the Edge TTS endpoint into the
+ * turn's MP3 buffer (via tts_data); defined below, after tts_data. Any
+ * failure returns false and start_tts falls back to silent pacing. */
+static bool edge_tts_fetch(const char *text, const char *voice);
+
 static void start_tts(void)
 {
     if (s_turn.tts_msg >= 0) {
@@ -1533,6 +1543,35 @@ static void start_tts(void)
          * end. decode() plays it at the speaker's volume, captions following,
          * and finishes the message once it's drained.
          */
+        /*
+         * Fork addition: with the speaker on, actually speak the reply —
+         * the integration the comment above prescribes. The MP3 is fetched
+         * whole before playback starts (decode() then drains it as usual);
+         * any failure falls through to the stock silent pacing below.
+         */
+        if (muse_settings_speaker_on() && s_turn.texts && s_turn.texts[i * TEXT_MAX]) {
+            m.pcm_start = s_turn.pcm_out;
+            m.pcm_frames = 0;
+            m.tts = TTS_ACTIVE;
+            s_turn.tts_msg = i;
+            s_turn.silent = false;
+            s_turn.mp3_len = 0;
+            s_turn.mp3_ended = false;
+            s_turn.kbps = 0;
+            s_turn.down_rate = 0;
+            mp3dec_init(&s_turn.dec);
+            char voice[MUSE_TTS_VOICE_MAX + 1];
+            muse_settings_tts_voice(voice);
+            if (edge_tts_fetch(s_turn.texts + i * TEXT_MAX, voice[0] ? voice : "zh-CN-YunyangNeural")) {
+                s_turn.mp3_ended = true;
+                ESP_LOGI(TAG, "speaking message %s (Edge TTS, %s, %u bytes of MP3)", m.id,
+                         voice[0] ? voice : "zh-CN-YunyangNeural", (unsigned)s_turn.mp3_len);
+                show_reply_start(m);
+                return;
+            }
+            ESP_LOGW(TAG, "Edge TTS failed for message %s; showing it silently", m.id);
+            s_turn.tts_msg = -1;
+        }
         m.pcm_start = s_turn.pcm_out;
         m.pcm_frames = (uint32_t)(m.len * MIC_RATE / TEXT_CHARS_PER_S);
         m.tts = TTS_ACTIVE;
@@ -1568,6 +1607,405 @@ static void tts_end(stream_t *s, bool ok)
         s_turn.msgs[i].tts = TTS_FINISHED;
         s_turn.tts_msg = -1;
     }
+}
+
+/* ---- Edge TTS (fork addition) ----
+ *
+ * Microsoft's Edge read-aloud endpoint: free, no API key, MP3 out — the
+ * speech start_tts() was designed to be fed (see its comment). The request
+ * is signed with a Sec-MS-GEC token (SHA-256 of the current 5-minute window
+ * in Windows ticks plus a public client token), which needs a synced wall
+ * clock, so the first fetch runs a one-off SNTP sync. Audio arrives as
+ * WebSocket binary messages, each carrying a short header block ending in
+ * "Path:audio"; the MP3 bytes after it go straight to tts_data().
+ */
+
+#define EDGE_TTS_HOST "speech.platform.bing.com"
+#define EDGE_TTS_TOKEN "6A5AA1D4EAFF4E9FB37E23D68491D6F4"
+#define EDGE_TTS_GEC_VERSION "1-130.0.2849.68"
+#define EDGE_TTS_TIMEOUT_US (30 * 1000000LL)
+
+static bool edge_time_ready(void)
+{
+    if (time(nullptr) > 1704067200) {   /* past 2024-01-01: the clock is synced */
+        return true;
+    }
+    static bool tried;
+    if (tried) {
+        return false;
+    }
+    tried = true;
+    esp_sntp_config_t cfg = ESP_NETIF_SNTP_DEFAULT_CONFIG("ntp.aliyun.com");
+    esp_netif_sntp_init(&cfg);   /* may already run; the wait below is what matters */
+    esp_netif_sntp_sync_wait(pdMS_TO_TICKS(8000));
+    if (time(nullptr) <= 1704067200) {
+        ESP_LOGW(TAG, "Edge TTS: no wall clock even after SNTP");
+        return false;
+    }
+    return true;
+}
+
+static void edge_gec(char out[65])
+{
+    int64_t ticks = (int64_t)time(nullptr);
+    ticks -= ticks % 300;                    /* the GEC window is 5 minutes */
+    ticks = (ticks + 11644473600LL) * 10000000LL;   /* Unix -> Windows ticks */
+    char buf[96];
+    snprintf(buf, sizeof(buf), "%lld%s", (long long)ticks, EDGE_TTS_TOKEN);
+    uint8_t hash[32];
+    mbedtls_sha256((const uint8_t *)buf, strlen(buf), hash, 0);
+    static const char *hex = "0123456789ABCDEF";
+    for (int i = 0; i < 32; i++) {
+        out[2 * i] = hex[hash[i] >> 4];
+        out[2 * i + 1] = hex[hash[i] & 15];
+    }
+    out[64] = '\0';
+}
+
+static void edge_js_date(char *out, size_t cap)
+{
+    time_t now = time(nullptr);
+    struct tm tmv;
+    gmtime_r(&now, &tmv);
+    strftime(out, cap, "%a %b %d %Y %H:%M:%S GMT+0000 (Coordinated Universal Time)", &tmv);
+}
+
+static void edge_hex_id(char out[33])
+{
+    static const char *hex = "0123456789abcdef";
+    for (int i = 0; i < 8; i++) {
+        uint32_t r = esp_random();
+        for (int j = 0; j < 4; j++) {
+            out[4 * i + j] = hex[(r >> (28 - 4 * j)) & 15];
+        }
+    }
+    out[32] = '\0';
+}
+
+/* ws_send_binary with a text opcode. */
+static bool ws_send_text(esp_tls_t *tls, const char *payload, size_t len)
+{
+    uint8_t hdr[14];
+    size_t hl;
+    hdr[0] = 0x81;   /* FIN | text */
+    if (len < 126) {
+        hdr[1] = 0x80 | len;
+        hl = 2;
+    } else if (len <= 65535) {
+        hdr[1] = 0x80 | 126;
+        hdr[2] = len >> 8;
+        hdr[3] = len & 0xff;
+        hl = 4;
+    } else {
+        return false;
+    }
+    uint32_t key = esp_random();
+    memcpy(hdr + hl, &key, 4);
+    hl += 4;
+    if (!write_all(tls, hdr, hl)) {
+        return false;
+    }
+    const uint8_t *mk = reinterpret_cast<const uint8_t *>(&key);
+    uint8_t chunk[512];
+    for (size_t off = 0; off < len;) {
+        size_t n = len - off < sizeof(chunk) ? len - off : sizeof(chunk);
+        for (size_t i = 0; i < n; i++) {
+            chunk[i] = (uint8_t)payload[off + i] ^ mk[(off + i) & 3];
+        }
+        if (!write_all(tls, chunk, n)) {
+            return false;
+        }
+        off += n;
+    }
+    return true;
+}
+
+/*
+ * ws_recv, but reporting the opcode (the Edge framing needs text vs binary)
+ * and bounded by a deadline. Returns the payload length, -3 for a ping/pong
+ * (handled), -1 on error or close.
+ */
+static ssize_t edge_recv(esp_tls_t *tls, uint8_t *buf, size_t cap, int *opcode, int64_t deadline)
+{
+    uint8_t hdr[2];
+    for (;;) {
+        ssize_t n = esp_tls_conn_read(tls, hdr, 1);
+        if (n == 1) {
+            break;
+        }
+        if (n == ESP_TLS_ERR_SSL_WANT_READ || n == ESP_TLS_ERR_SSL_WANT_WRITE) {
+            if (now_us() >= deadline) {
+                return -1;
+            }
+            vTaskDelay(1);
+            continue;
+        }
+        return -1;
+    }
+    if (!read_all(tls, hdr + 1, 1)) {
+        return -1;
+    }
+    *opcode = hdr[0] & 0x0f;
+    bool masked = hdr[1] & 0x80;
+    uint64_t plen = hdr[1] & 0x7f;
+    uint8_t ext[8];
+    if (plen == 126) {
+        if (!read_all(tls, ext, 2)) {
+            return -1;
+        }
+        plen = (ext[0] << 8) | ext[1];
+    } else if (plen == 127) {
+        if (!read_all(tls, ext, 8)) {
+            return -1;
+        }
+        plen = 0;
+        for (int i = 0; i < 8; i++) {
+            plen = (plen << 8) | ext[i];
+        }
+    }
+    uint8_t mask[4] = { 0 };
+    if (masked && !read_all(tls, mask, 4)) {
+        return -1;
+    }
+    if (plen > cap) {
+        ESP_LOGE(TAG, "Edge TTS: frame too large (%llu)", (unsigned long long)plen);
+        return -1;
+    }
+    if (!read_all(tls, buf, plen)) {
+        return -1;
+    }
+    if (masked) {
+        for (size_t i = 0; i < plen; i++) {
+            buf[i] ^= mask[i & 3];
+        }
+    }
+    if (*opcode == 0x8) {
+        return -1;
+    }
+    if (*opcode == 0x9) {
+        uint8_t pong[6] = { 0x8A, (uint8_t)(0x80 | plen), 0, 0, 0, 0 };
+        write_all(tls, pong, sizeof(pong));
+        if (plen) {
+            write_all(tls, buf, plen);
+        }
+        return -3;
+    }
+    if (*opcode == 0xA) {
+        return -3;
+    }
+    return (ssize_t)plen;
+}
+
+/* Cleans the reply text (markdown noise, control chars; a UTF-8-safe cap)
+ * and wraps it in SSML for `voice`. Returns a malloc'd string. */
+static char *edge_ssml(const char *text, const char *voice)
+{
+    char clean[768];
+    size_t w = 0;
+    for (size_t r = 0; text[r];) {
+        unsigned char c = (unsigned char)text[r];
+        size_t clen = c >= 0xF0 ? 4 : c >= 0xE0 ? 3 : c >= 0xC0 ? 2 : 1;
+        if (w + clen > sizeof(clean) - 1) {
+            break;
+        }
+        if (c < 0x20 || c == '#' || c == '*' || c == '`' || c == '_') {
+            r++;
+            continue;
+        }
+        memcpy(clean + w, text + r, clen);
+        w += clen;
+        r += clen;
+    }
+    clean[w] = '\0';
+    if (!w) {
+        return nullptr;
+    }
+    size_t cap = w * 6 + strlen(voice) + 256;
+    char *ssml = (char *)malloc(cap);
+    if (!ssml) {
+        return nullptr;
+    }
+    size_t o = (size_t)snprintf(ssml, cap,
+                                "<speak version='1.0' xmlns='http://www.w3.org/2001/10/synthesis' xml:lang='zh-CN'>"
+                                "<voice name='%s'><prosody pitch='+0Hz' rate='+0%%' volume='+100%%'>",
+                                voice);
+    for (size_t r = 0; clean[r] && o + 7 < cap; r++) {
+        const char *esc = nullptr;
+        switch (clean[r]) {
+            case '&': esc = "&amp;"; break;
+            case '<': esc = "&lt;"; break;
+            case '>': esc = "&gt;"; break;
+            case '\'': esc = "&apos;"; break;
+            case '"': esc = "&quot;"; break;
+        }
+        if (esc) {
+            size_t l = strlen(esc);
+            memcpy(ssml + o, esc, l);
+            o += l;
+        } else {
+            ssml[o++] = clean[r];
+        }
+    }
+    snprintf(ssml + o, cap - o, "</prosody></voice></speak>");
+    return ssml;
+}
+
+static bool edge_tts_fetch(const char *text, const char *voice)
+{
+    if (!edge_time_ready()) {
+        return false;
+    }
+    char *ssml = edge_ssml(text, voice);
+    if (!ssml) {
+        return false;
+    }
+    bool ok = false;
+    esp_tls_t *tls = esp_tls_init();
+    uint8_t *frame = (uint8_t *)psram_alloc(SCRATCH);
+    if (!tls || !frame) {
+        free(ssml);
+        if (tls) {
+            esp_tls_conn_destroy(tls);
+        }
+        free(frame);
+        return false;
+    }
+    esp_tls_cfg_t cfg = {};
+    cfg.crt_bundle_attach = esp_crt_bundle_attach;
+    cfg.timeout_ms = 15000;
+    if (esp_tls_conn_new_sync(EDGE_TTS_HOST, strlen(EDGE_TTS_HOST), 443, &cfg, tls) != 1) {
+        ESP_LOGW(TAG, "Edge TTS: TLS connect failed");
+        goto out;
+    }
+    {
+        char gec[65], conn_id[33], key_b64[32];
+        edge_gec(gec);
+        edge_hex_id(conn_id);
+        uint8_t key_raw[16];
+        for (int i = 0; i < 4; i++) {
+            uint32_t r = esp_random();
+            memcpy(key_raw + 4 * i, &r, 4);
+        }
+        size_t key_len = 0;
+        mbedtls_base64_encode((uint8_t *)key_b64, sizeof(key_b64), &key_len, key_raw, sizeof(key_raw));
+        char req[1536];
+        int rn = snprintf(req, sizeof(req),
+                          "GET /consumer/speech/synthesize/readaloud/edge/v1?TrustedClientToken=%s&Sec-MS-GEC=%s"
+                          "&Sec-MS-GEC-Version=%s&ConnectionId=%s HTTP/1.1\r\n"
+                          "Host: %s\r\n"
+                          "Upgrade: websocket\r\n"
+                          "Connection: Upgrade\r\n"
+                          "Sec-WebSocket-Key: %s\r\n"
+                          "Sec-WebSocket-Version: 13\r\n"
+                          "Origin: chrome-extension://jdiccldimpdaibmpdkjnbmckianbfold\r\n"
+                          "User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+                          "(KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36 Edg/130.0.0.0\r\n"
+                          "Accept-Language: en-US,en;q=0.9\r\n"
+                          "Pragma: no-cache\r\n"
+                          "Cache-Control: no-cache\r\n\r\n",
+                          EDGE_TTS_TOKEN, gec, EDGE_TTS_GEC_VERSION, conn_id, EDGE_TTS_HOST, key_b64);
+        if (rn <= 0 || !write_all(tls, (const uint8_t *)req, rn)) {
+            ESP_LOGW(TAG, "Edge TTS: upgrade request failed");
+            goto out;
+        }
+        /* The response head, read a byte at a time up to the blank line. */
+        char head[1024];
+        size_t hn = 0;
+        int64_t deadline = now_us() + EDGE_TTS_TIMEOUT_US;
+        while (hn + 1 < sizeof(head) && now_us() < deadline) {
+            ssize_t n = esp_tls_conn_read(tls, head + hn, 1);
+            if (n == 1) {
+                hn++;
+                if (hn >= 4 && !memcmp(head + hn - 4, "\r\n\r\n", 4)) {
+                    break;
+                }
+            } else if (n == ESP_TLS_ERR_SSL_WANT_READ || n == ESP_TLS_ERR_SSL_WANT_WRITE) {
+                vTaskDelay(1);
+            } else {
+                break;
+            }
+        }
+        head[hn] = '\0';
+        if (!strstr(head, " 101 ")) {
+            ESP_LOGW(TAG, "Edge TTS: upgrade refused: %.96s", head);
+            goto out;
+        }
+    }
+    {
+        char date[96];
+        edge_js_date(date, sizeof(date));
+        const char *cfgbody =
+            "{\"context\":{\"synthesis\":{\"audio\":{\"metadataoptions\":"
+            "{\"sentenceBoundaryEnabled\":\"false\",\"wordBoundaryEnabled\":\"false\"},"
+            "\"outputFormat\":\"audio-24khz-48kbitrate-mono-mp3\"}}}}";
+        char msg[768];
+        int mn = snprintf(msg, sizeof(msg),
+                          "X-Timestamp:%s\r\n"
+                          "Content-Type:application/json; charset=utf-8\r\n"
+                          "Path:speech.config\r\n\r\n%s",
+                          date, cfgbody);
+        if (mn <= 0 || !ws_send_text(tls, msg, mn)) {
+            ESP_LOGW(TAG, "Edge TTS: speech.config send failed");
+            goto out;
+        }
+        char req_id[33];
+        edge_hex_id(req_id);
+        size_t cap = strlen(ssml) + 320;
+        char *smsg = (char *)malloc(cap);
+        if (!smsg) {
+            goto out;
+        }
+        int sn = snprintf(smsg, cap,
+                          "X-RequestId:%s\r\n"
+                          "Content-Type:application/ssml+xml\r\n"
+                          "X-Timestamp:%s\r\n"
+                          "Path:ssml\r\n\r\n%s",
+                          req_id, date, ssml);
+        bool sent = sn > 0 && ws_send_text(tls, smsg, sn);
+        free(smsg);
+        if (!sent) {
+            ESP_LOGW(TAG, "Edge TTS: SSML send failed");
+            goto out;
+        }
+    }
+    {
+        bool ended = false;
+        size_t bytes = 0;
+        int64_t deadline = now_us() + EDGE_TTS_TIMEOUT_US;
+        while (!ended && now_us() < deadline) {
+            int opcode = 0;
+            ssize_t n = edge_recv(tls, frame, SCRATCH - 1, &opcode, deadline);
+            if (n == -3) {
+                continue;
+            }
+            if (n < 0) {
+                break;
+            }
+            if (opcode == 0x1) {
+                frame[n] = '\0';
+                if (strstr((const char *)frame, "Path:turn.end")) {
+                    ended = true;
+                }
+            } else if (opcode == 0x2) {
+                if (n >= 2) {
+                    size_t hlen = ((size_t)frame[0] << 8) | frame[1];
+                    if (hlen <= 4096 && 2 + hlen < (size_t)n) {
+                        tts_data(frame + 2 + hlen, n - 2 - hlen);
+                        bytes += (size_t)n - 2 - hlen;
+                    } else {
+                        ESP_LOGW(TAG, "Edge TTS: odd audio frame (hlen %u of %d)", (unsigned)hlen, (int)n);
+                    }
+                }
+            }
+        }
+        ESP_LOGI(TAG, "Edge TTS: %u bytes of MP3, turn %s", (unsigned)bytes, ended ? "complete" : "INCOMPLETE");
+        ok = ended && bytes > 0;
+    }
+out:
+    free(ssml);
+    free(frame);
+    esp_tls_conn_destroy(tls);
+    return ok;
 }
 
 /* Speaker off: queues the shown message's silence while the reply buffer has room. */

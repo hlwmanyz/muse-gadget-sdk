@@ -84,10 +84,15 @@ static int build_status(char *out, size_t len)
     muse_settings_hatch_host(host);
     muse_settings_hatch_vm(vm);
 
+    char voice[MUSE_TTS_VOICE_MAX + 1];
+    muse_settings_tts_voice(voice);
+
     char ssid_e[2 * MUSE_SSID_MAX + 1], host_e[2 * MUSE_HOST_MAX + 1], vm_e[2 * MUSE_VM_MAX + 1], last_e[128];
+    char voice_e[2 * MUSE_TTS_VOICE_MAX + 1];
     json_str(ssid_e, sizeof(ssid_e), w.ssid);
     json_str(host_e, sizeof(host_e), host);
     json_str(vm_e, sizeof(vm_e), vm);
+    json_str(voice_e, sizeof(voice_e), voice);
     json_str(last_e, sizeof(last_e), s_last);
 
     return snprintf(out, len,
@@ -95,12 +100,12 @@ static int build_status(char *out, size_t len)
                     "\"wifi\":{\"on\":%s,\"state\":\"%s\",\"ssid\":\"%s\",\"ip\":\"%s\",\"rssi\":%d},"
                     "\"hatch\":{\"host\":\"%s\",\"vm\":\"%s\",\"token\":%s,\"state\":\"%s\"},"
                     "\"link\":{\"paired\":%s,\"state\":\"%s\"},"
-                    "\"volume\":%d,\"speaker\":%s,\"mic_gain\":%d,\"brightness\":%d,\"sleep\":%d,\"last\":\"%s\"}",
+                    "\"volume\":%d,\"speaker\":%s,\"tts_voice\":\"%s\",\"mic_gain\":%d,\"brightness\":%d,\"sleep\":%d,\"last\":\"%s\"}",
                     s_name, esp_app_get_description()->version, p.battery_pct,
                     muse_settings_wifi_on() ? "true" : "false", wifi_state_name(w.state), ssid_e, w.ip, w.rssi,
                     host_e, vm_e, muse_settings_hatch_token_len() ? "true" : "false", muse_hatch_state_name(h.state),
                     muse_link_hatch_linked() ? "true" : "false", muse_link_state_name(muse_link_state()),
-                    muse_settings_volume(), muse_settings_speaker_on() ? "true" : "false",
+                    muse_settings_volume(), muse_settings_speaker_on() ? "true" : "false", voice_e,
                     muse_settings_mic_gain(), muse_settings_brightness(),
                     muse_settings_sleep_s(), last_e);
 }
@@ -159,6 +164,8 @@ static void run_command(char *cmd)
         }
     } else if (!strcmp(cmd, "hatch.test")) {
         muse_hatch_test();
+    } else if (!strcmp(cmd, "tts.voice")) {
+        muse_settings_set_tts_voice(v);
     } else if (!strcmp(cmd, "test.loopback")) {
         muse_voice_request_loopback();
     } else if (!strcmp(cmd, "volume") && parse_int(v, 0, 100, &n)) {

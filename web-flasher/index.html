@@ -179,6 +179,18 @@ limitations under the License.
         <input type="checkbox" id="speaker-toggle"> Speaker — play replies out loud
       </label>
       <p id="speaker-status" class="status"></p>
+      <label class="field" for="tts-voice" style="margin-top: 1rem;">Voice — for spoken replies (Microsoft Edge TTS)</label>
+      <select id="tts-voice">
+        <option value="zh-CN-YunyangNeural">云扬 Yunyang — male, news anchor</option>
+        <option value="zh-CN-XiaoxiaoNeural">晓晓 Xiaoxiao — female, warm</option>
+        <option value="zh-CN-XiaoyiNeural">晓伊 Xiaoyi — female, lively</option>
+        <option value="zh-CN-YunjianNeural">云健 Yunjian — male, narration</option>
+        <option value="zh-CN-YunxiNeural">云希 Yunxi — male, young</option>
+        <option value="zh-CN-YunxiaNeural">云夏 Yunxia — boy</option>
+        <option value="zh-CN-YunjieNeural">云杰 Yunjie — male</option>
+        <option value="zh-CN-XiaochenNeural">晓辰 Xiaochen — male</option>
+      </select>
+      <p id="tts-voice-status" class="status"></p>
       <p class="note">
         Or play the gadget's built-in test sound — decoded and played entirely
         on the gadget, no network involved.
@@ -197,7 +209,7 @@ limitations under the License.
   <script type="module">
     import { installFlasherHooks } from "./flasher-hooks.js";
     import { installPacedSerial } from "./paced-serial.js";
-    import { isSdkToken, sendSdkToken, gadgetSpeaker, gadgetTestSound } from "./sdk-token.js";
+    import { isSdkToken, sendSdkToken, gadgetSpeaker, gadgetTestSound, gadgetTtsVoice } from "./sdk-token.js";
 
     const $ = (id) => document.getElementById(id);
     const select = $("board");
@@ -358,6 +370,34 @@ limitations under the License.
       } finally {
         speakerBusy = false;
         speakerToggle.disabled = false;
+      }
+    });
+
+    // The TTS voice, over the same console channel. The select only ever
+    // settles on the voice the gadget itself confirmed in its status reply.
+    const voiceSelect = $("tts-voice");
+    voiceSelect.disabled = !pacing;
+    let voiceBusy = false;
+    let voiceConfirmed = voiceSelect.value;
+    voiceSelect.addEventListener("change", async () => {
+      if (voiceBusy) return;
+      const want = voiceSelect.value;
+      voiceBusy = true;
+      voiceSelect.disabled = true;
+      showStatus($("tts-voice-status"), "Talking to the gadget…");
+      try {
+        const port = await navigator.serial.requestPort();
+        const heard = await gadgetTtsVoice(port, want);
+        voiceConfirmed = heard;
+        voiceSelect.value = heard;
+        showStatus($("tts-voice-status"), "Voice saved — confirmed by the gadget.", "ok");
+      } catch (e) {
+        voiceSelect.value = voiceConfirmed;
+        if (e.name !== "NotFoundError") showStatus($("tts-voice-status"), e.message, "error");
+        else showStatus($("tts-voice-status"), "");
+      } finally {
+        voiceBusy = false;
+        voiceSelect.disabled = false;
       }
     });
 

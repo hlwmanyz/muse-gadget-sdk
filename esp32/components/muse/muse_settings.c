@@ -44,6 +44,7 @@ static struct {
     char host[MUSE_HOST_MAX + 1];
     char vm[MUSE_VM_MAX + 1];
     char token[MUSE_TOKEN_MAX + 1];
+    char tts_voice[MUSE_TTS_VOICE_MAX + 1];
 } s = {
     .volume = CONFIG_MUSE_DEFAULT_VOLUME,
     .speaker_on = true,
@@ -52,6 +53,7 @@ static struct {
     .sleep_s = 120,
     .wifi_on = true,
     .host = DEFAULT_HOST,
+    .tts_voice = "zh-CN-YunyangNeural",
 };
 
 static SemaphoreHandle_t s_lock;
@@ -132,6 +134,7 @@ esp_err_t muse_settings_init(void)
     load_str("host", s.host, sizeof(s.host));
     load_str("vm", s.vm, sizeof(s.vm));
     load_str("token", s.token, sizeof(s.token));
+    load_str("tts_voice", s.tts_voice, sizeof(s.tts_voice));
 
     s.volume = clampi(s.volume, 0, 100);
     s.mic_gain = clampi(s.mic_gain, 0, MUSE_MIC_GAIN_MAX);
@@ -274,6 +277,20 @@ void muse_settings_set_hatch_vm(const char *vm)
         save_str("vm", s.vm);
     });
     notify(MUSE_SETTING_HATCH);
+}
+
+void muse_settings_tts_voice(char out[MUSE_TTS_VOICE_MAX + 1])
+{
+    LOCKED(strlcpy(out, s.tts_voice, MUSE_TTS_VOICE_MAX + 1));
+}
+
+void muse_settings_set_tts_voice(const char *voice)
+{
+    LOCKED({
+        strlcpy(s.tts_voice, voice ? voice : "", sizeof(s.tts_voice));
+        save_str("tts_voice", s.tts_voice);
+    });
+    notify(MUSE_SETTING_TTS);
 }
 
 esp_err_t muse_settings_set_hatch_token(const char *token, bool append)
