@@ -57,14 +57,15 @@ CONFIG_SPIRAM_ALLOW_BSS_SEG_EXTERNAL_MEMORY=y
 # each, which voice over the tunnel doesn't fill.
 #
 # Trimmed further on this board (2026-10-23, DMA accounting): steady-state
-# DMA free was 10-14 KB, below display.draw_file's fetch guard (the Noise
-# TX reserve, 16 KB, plus the image body). Static buffers are 1.6 KB each
-# of standing DMA, so RX 8->2 and TX 8->6 hand back ~16 KB; the dynamic RX
-# pool absorbs receive bursts, and six TX buffers still keep several
-# frames in flight for the voice upload. The aggregation windows shrink
-# for the same reason: their reorder buffers are dynamic DMA too (and
-# the RX window stays within twice the static RX count).
-CONFIG_ESP_WIFI_STATIC_TX_BUFFER_NUM=6
+# DMA free was 10-14 KB, below display.draw_file's fetch guard (its keep
+# is ~29.8 KB: the 16 KB Noise TX reserve plus the fetch stack, the JPEG
+# pool and a safety reserve). Static buffers are 1.6 KB each of standing
+# DMA, so RX 8->2 and TX 8->4 hand back ~17 KB; the dynamic RX pool
+# absorbs receive bursts, and four TX buffers still keep several frames
+# in flight for the voice upload. The aggregation windows shrink for
+# the same reason: their reorder buffers are dynamic DMA too (and the
+# RX window stays within twice the static RX count).
+CONFIG_ESP_WIFI_STATIC_TX_BUFFER_NUM=4
 CONFIG_ESP_WIFI_STATIC_RX_BUFFER_NUM=2
 CONFIG_ESP_WIFI_DYNAMIC_RX_BUFFER_NUM=24
 CONFIG_ESP_WIFI_RX_BA_WIN=4
