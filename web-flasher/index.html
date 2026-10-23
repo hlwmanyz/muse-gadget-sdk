@@ -168,6 +168,19 @@ limitations under the License.
       <p id="token-status" class="status"></p>
     </details>
 
+    <details class="card" id="gadget-settings">
+      <summary>Gadget settings</summary>
+      <p class="note">
+        For a gadget running firmware from this page, connected by USB.
+        Flipping the switch asks the gadget for its current state first and
+        only shows what the gadget itself confirms.
+      </p>
+      <label class="checkbox">
+        <input type="checkbox" id="speaker-toggle"> Speaker — play replies out loud
+      </label>
+      <p id="speaker-status" class="status"></p>
+    </details>
+
     <footer class="note">
       Board not showing up? Some boards need you to hold <strong>BOOT</strong>
       while plugging in USB. Built from
@@ -179,6 +192,7 @@ limitations under the License.
     import { installFlasherHooks } from "./flasher-hooks.js";
     import { installPacedSerial } from "./paced-serial.js";
     import { isSdkToken, sendSdkToken } from "./sdk-token.js";
+    import { gadgetSpeaker } from "./gadget-settings.js";
 
     const $ = (id) => document.getElementById(id);
     const select = $("board");
@@ -313,6 +327,33 @@ limitations under the License.
         return;   // no port picked
       }
       await send(port, $("token-status"));
+    });
+
+    // The speaker switch, over the same console port as the token. The
+    // gadget confirms every change in its own status reply; the checkbox
+    // only ever settles on the state the gadget reported.
+    const speakerToggle = $("speaker-toggle");
+    speakerToggle.disabled = !pacing;
+    let speakerBusy = false;
+    speakerToggle.addEventListener("click", async () => {
+      if (speakerBusy) return;
+      const want = speakerToggle.checked;
+      speakerBusy = true;
+      speakerToggle.disabled = true;
+      showStatus($("speaker-status"), "Talking to the gadget…");
+      try {
+        const port = await navigator.serial.requestPort();
+        const heard = await gadgetSpeaker(port, want);
+        speakerToggle.checked = heard;
+        showStatus($("speaker-status"), `Speaker is ${heard ? "on" : "off"}, confirmed by the gadget.`, "ok");
+      } catch (e) {
+        speakerToggle.checked = !want;
+        if (e.name !== "NotFoundError") showStatus($("speaker-status"), e.message, "error");
+        else showStatus($("speaker-status"), "");
+      } finally {
+        speakerBusy = false;
+        speakerToggle.disabled = false;
+      }
     });
 
     if (build?.commit) {
