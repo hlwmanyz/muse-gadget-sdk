@@ -64,6 +64,23 @@ class ChatViewTest(unittest.TestCase):
         done = link.index("MUSE_HATCH_EV_DONE", post)
         self.assertLess(post, done)
 
+    def test_session_posts_both_sides_under_the_gate(self):
+        # Boards with PSRAM (CONFIG_MUSE_HATCH) run the session backend,
+        # not the link one: the posts must live there too, or the view
+        # stays empty on exactly those boards.
+        session = read("components/muse/muse_chat_session.cpp")
+        self.assertGreaterEqual(session.count(GATE), 2)
+        # The user's bubble is the final transcript, posted in post_chat
+        # next to the HEARD event.
+        post = session.index("muse_state_chat_post(MUSE_CHAT_USER, text)")
+        heard = session.index("MUSE_HATCH_EV_HEARD, text", post - 200)
+        self.assertLess(post, heard)
+        # Each completed message posts its whole text as a bubble.
+        self.assertIn("muse_state_chat_post(MUSE_CHAT_ASSISTANT, bubble)", session)
+        # The C++ backend can only call the C state API through an
+        # extern "C" header.
+        self.assertIn('extern "C"', read("components/muse/muse_state.h"))
+
     def test_ui_view_and_draw_wake(self):
         ui = read("components/muse/muse_ui.c")
         self.assertIn(GATE, ui)
@@ -79,7 +96,7 @@ class ChatViewTest(unittest.TestCase):
                         draw.index("heap_caps_calloc"))
 
     def test_version(self):
-        self.assertIn('set(PROJECT_VER "21.0")', read("CMakeLists.txt"))
+        self.assertIn('set(PROJECT_VER "21.1")', read("CMakeLists.txt"))
 
 
 if __name__ == "__main__":

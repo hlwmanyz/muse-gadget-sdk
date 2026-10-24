@@ -76,6 +76,8 @@ extern "C" {
 #include "muse_wifi.h"
 }
 #include "muse_chat_priv.h"
+#include "muse_state.h"
+#include "sdkconfig.h"
 
 #include <xplat/noise/core/ClientSession.h>
 #include <xplat/noise/core/PsaCryptoBackend.h>
@@ -1223,6 +1225,9 @@ static void post_chat(const char *text)
         turn_fail("DIDN'T CATCH THAT");
         return;
     }
+#if CONFIG_MUSE_CHAT_VIEW
+    muse_state_chat_post(MUSE_CHAT_USER, text);   /* the final transcript, for the chat view */
+#endif
     ESP_LOGI(TAG, "heard: \"%s\"", text);
     emit(MUSE_HATCH_EV_HEARD, text);
     send_chat(text, "text");
@@ -1387,6 +1392,23 @@ static void message_done(int i, const char *final_text)
     }
     m.done = true;
     mark(M_DONE);
+#if CONFIG_MUSE_CHAT_VIEW
+    /* The chat view's assistant bubble: the message's whole text -- the
+     * final text when the stream sent one, else what the deltas built up
+     * in its slot, else (no texts buffer) the tail that's all that's kept. */
+    {
+        const char *bubble = final_text && final_text[0] ? final_text : nullptr;
+        if (!bubble && s_turn.texts) {
+            bubble = s_turn.texts + i * TEXT_MAX;
+        }
+        if (!bubble && m.len) {
+            bubble = m.tail;
+        }
+        if (bubble && bubble[0]) {
+            muse_state_chat_post(MUSE_CHAT_ASSISTANT, bubble);
+        }
+    }
+#endif
     if (s_turn.text) {
         /* The whole text if the pieces didn't add up to it (a line skipped, say): the reader uses it instead. */
         size_t n = m.len;

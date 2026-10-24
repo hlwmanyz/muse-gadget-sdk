@@ -20,6 +20,10 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 /*
  * Shared state between the voice pipeline (writer) and the UI (reader).
  * Scalars are plain word-sized stores; the caption is guarded by a spinlock.
@@ -118,3 +122,7 @@ void muse_state_nudge(void);
 /* Touch/pet reaction. */
 void muse_state_make_happy(void);
 float muse_state_happiness(void);
+
+#ifdef __cplusplus
+}
+#endif
