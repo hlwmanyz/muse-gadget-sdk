@@ -71,6 +71,29 @@ void muse_state_set_page(int cols, int lines);
 void muse_state_set_cjk_page(int cols, int lines);
 void muse_state_page(bool cjk, int *cols, int *lines);
 
+/*
+ * The conversation log behind the chat view (CONFIG_MUSE_CHAT_VIEW): the
+ * voice pipeline posts each side of a turn as it lands -- what Muse heard,
+ * then the reply -- and the UI reads entries back by sequence number.
+ * Only the newest MUSE_CHAT_MAX are kept. Storage is PSRAM, allocated on
+ * the first post; without PSRAM the log stays empty and posts are dropped.
+ * Texts are kept as posted (the caption path folds to ASCII; this doesn't).
+ */
+typedef enum {
+    MUSE_CHAT_USER = 0,   /* what the person said, shown on the right */
+    MUSE_CHAT_ASSISTANT,  /* Muse's reply, shown on the left */
+} muse_chat_role_t;
+
+#define MUSE_CHAT_MAX 20         /* messages kept */
+#define MUSE_CHAT_TEXT_MAX 1024  /* bytes per message, cut on a UTF-8 edge */
+
+void muse_state_chat_post(muse_chat_role_t role, const char *text);
+/* Messages ever posted; also the sequence number of the next one. */
+uint32_t muse_state_chat_count(void);
+/* Copies message `seq` out; false when it was already evicted (or isn't
+ * there yet). */
+bool muse_state_chat_get(uint32_t seq, muse_chat_role_t *role, char *out, size_t cap);
+
 void muse_state_set_power(const muse_power_t *power);
 muse_power_t muse_state_power(void);
 /* A battery and no USB power (charger or computer). Power saving asleep (the

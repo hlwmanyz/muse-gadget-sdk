@@ -149,6 +149,13 @@ static SemaphoreHandle_t s_image_mutex;
 static uint16_t *s_image_buf;
 static lv_area_t s_image_area;
 static bool s_image_dirty;
+#if CONFIG_MUSE_CHAT_VIEW
+static lv_obj_t *s_chat;        /* the chat view, over the face */
+static lv_obj_t *s_chat_list;   /* its scrollable bubble column */
+static bool s_chat_visible;
+static uint32_t s_chat_rendered;   /* log entries already shown as bubbles */
+static float s_chat_until;         /* chat lingers until this frame time */
+#endif
 static bool s_ready;
 
 static float s_level;
@@ -1133,9 +1140,121 @@ static void update_control_hints(muse_mode_t mode)
     }
 }
 
+#if CONFIG_MUSE_CHAT_VIEW
+/* ---- Chat view: the conversation as message bubbles ---- */
+
+#define CHAT_LINGER_S 25.0f   /* the reply stays readable this long after a turn */
+
+static void chat_add_bubble(muse_chat_role_t role, const char *text)
+{
+    bool user = role == MUSE_CHAT_USER;
+    lv_obj_t *row = lv_obj_create(s_chat_list);
+    lv_obj_remove_style_all(row);
+    lv_obj_set_width(row, lv_pct(100));
+    lv_obj_set_height(row, LV_SIZE_CONTENT);
+    lv_obj_set_flex_flow(row, LV_FLEX_FLOW_ROW);
+    lv_obj_set_flex_align(row, user ? LV_FLEX_ALIGN_END : LV_FLEX_ALIGN_START,
+                          LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_START);
+    lv_obj_remove_flag(row, LV_OBJ_FLAG_SCROLLABLE);
+
+    lv_obj_t *bub = lv_obj_create(row);
+    lv_obj_remove_style_all(bub);
+    lv_obj_set_size(bub, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
+    lv_obj_set_style_max_width(bub, (s_w - 16) * 85 / 100, 0);
+    lv_obj_set_style_bg_color(bub, lv_color_hex(user ? 0x95ec69 : 0xf2f2f2), 0);
+    lv_obj_set_style_bg_opa(bub, LV_OPA_COVER, 0);
+    lv_obj_set_style_radius(bub, 8, 0);
+    lv_obj_set_style_pad_hor(bub, 8, 0);
+    lv_obj_set_style_pad_ver(bub, 6, 0);
+    lv_obj_remove_flag(bub, LV_OBJ_FLAG_SCROLLABLE);
+
+    lv_obj_t *lbl = lv_label_create(bub);
+    lv_obj_set_style_text_font(lbl, caption_font(), 0);
+    lv_obj_set_style_text_color(lbl, lv_color_hex(0x111111), 0);
+    lv_obj_set_style_text_align(lbl, LV_TEXT_ALIGN_LEFT, 0);
+    lv_label_set_long_mode(lbl, LV_LABEL_LONG_MODE_WRAP);
+    lv_obj_set_width(lbl, LV_SIZE_CONTENT);
+    lv_obj_set_style_max_width(lbl, (s_w - 16) * 85 / 100 - 16, 0);
+    lv_label_set_text(lbl, text);
+}
+
+/* Per frame while awake: shows or hides the chat view with the turn, and
+ * appends bubbles for whatever the conversation log gained. */
+static void chat_sync(muse_mode_t mode, float now)
+{
+    if (!s_chat) {
+        return;
+    }
+    bool in_turn = mode == MUSE_MODE_LISTENING || mode == MUSE_MODE_THINKING
+        || mode == MUSE_MODE_SPEAKING;
+    if (in_turn) {
+        s_chat_until = now + CHAT_LINGER_S;
+    }
+    uint32_t count = muse_state_chat_count();
+    bool want = s_face_active && (in_turn || (count && now <= s_chat_until));
+    if (want && !s_chat_visible) {
+        s_chat_visible = true;
+        lv_obj_remove_flag(s_chat, LV_OBJ_FLAG_HIDDEN);
+    } else if (!want && s_chat_visible) {
+        s_chat_visible = false;
+        lv_obj_add_flag(s_chat, LV_OBJ_FLAG_HIDDEN);
+    }
+    if (!s_chat_visible) {
+        return;
+    }
+    bool added = false;
+    while (s_chat_rendered < count) {
+        muse_chat_role_t role;
+        static char text[MUSE_CHAT_TEXT_MAX];   /* the LVGL task's stack is spoken for */
+        if (!muse_state_chat_get(s_chat_rendered, &role, text, sizeof(text))) {
+            /* Evicted before it was ever shown: start from what's kept. */
+            s_chat_rendered = count > MUSE_CHAT_MAX ? count - MUSE_CHAT_MAX : 0;
+            lv_obj_clean(s_chat_list);
+            continue;
+        }
+        chat_add_bubble(role, text);
+        s_chat_rendered++;
+        s_chat_until = now + CHAT_LINGER_S;
+        added = true;
+    }
+    while (lv_obj_get_child_count(s_chat_list) > MUSE_CHAT_MAX) {
+        lv_obj_delete(lv_obj_get_child(s_chat_list, 0));
+    }
+    if (added) {
+        lv_obj_update_layout(s_chat_list);
+        lv_obj_scroll_to_y(s_chat_list, LV_COORD_MAX, LV_ANIM_OFF);
+    }
+}
+
+static void chat_build(lv_obj_t *scr)
+{
+    /* Over the face, under the image: the image is created after this. */
+    int top = s_small ? 34 : 72;   /* below the status row and the state */
+    s_chat = lv_obj_create(scr);
+    lv_obj_remove_style_all(s_chat);
+    lv_obj_set_pos(s_chat, 0, top);
+    lv_obj_set_size(s_chat, s_w, s_h - top);
+    lv_obj_set_style_bg_color(s_chat, lv_color_hex(0x0b0b10), 0);
+    lv_obj_set_style_bg_opa(s_chat, LV_OPA_COVER, 0);
+    lv_obj_remove_flag(s_chat, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_add_flag(s_chat, LV_OBJ_FLAG_HIDDEN);
+    s_chat_list = lv_obj_create(s_chat);
+    lv_obj_remove_style_all(s_chat_list);
+    lv_obj_set_size(s_chat_list, lv_pct(100), lv_pct(100));
+    lv_obj_set_flex_flow(s_chat_list, LV_FLEX_FLOW_COLUMN);
+    lv_obj_set_style_pad_all(s_chat_list, 8, 0);
+    lv_obj_set_style_pad_row(s_chat_list, 8, 0);
+    lv_obj_set_scrollbar_mode(s_chat_list, LV_SCROLLBAR_MODE_OFF);
+    lv_obj_set_scroll_dir(s_chat_list, LV_DIR_VER);
+}
+#endif
+
 static void build_overlays(void)
 {
     lv_obj_t *scr = lv_screen_active();
+#if CONFIG_MUSE_CHAT_VIEW
+    chat_build(scr);
+#endif
 
     /* Page dots. */
     for (int i = 0; i < 2 && s_tv; i++) {
@@ -1634,6 +1753,9 @@ static void frame_tick(lv_timer_t *timer)
     if (update_sleep()) {
         return;
     }
+#if CONFIG_MUSE_CHAT_VIEW
+    chat_sync(mode, now);
+#endif
     update_chrome(now);
     if (muse_menu_tick(now)) {
         image_hide_locked();
@@ -1642,6 +1764,12 @@ static void frame_tick(lv_timer_t *timer)
     if (s_image_dsc.data) {
         return;   /* the image covers the face */
     }
+#if CONFIG_MUSE_CHAT_VIEW
+    if (s_chat_visible) {
+        update_status(mode, now);   /* the state line stays live above the chat */
+        return;   /* the chat view covers the face */
+    }
+#endif
     if (s_tv && lv_obj_get_scroll_x(s_tv) != 0) {
         /* Off screen, or sliding to or from settings: hold still so the
          * slide gets the whole frame time. */
@@ -1760,6 +1888,13 @@ bool muse_ui_image_draw(int x, int y, int w, int h, const uint16_t *pixels)
     if (!s_ready || x < 0 || y < 0 || w <= 0 || h <= 0 || x + w > s_w || y + h > s_h) {
         return false;
     }
+    /* Any draw wakes the screen, not just a new image's first rectangle:
+     * asleep, the display may be paused (muse_input.c), so the present
+     * path's own wake never runs, and a redraw of the image already up
+     * would leave the panel dark. */
+    if (muse_state_asleep()) {
+        muse_state_set_asleep(false);
+    }
     xSemaphoreTake(s_image_mutex, portMAX_DELAY);
     if (!s_image_buf) {
         /* The first rectangle of an image: a black screen to draw onto. */
@@ -1768,8 +1903,6 @@ bool muse_ui_image_draw(int x, int y, int w, int h, const uint16_t *pixels)
             xSemaphoreGive(s_image_mutex);
             return false;
         }
-        /* Now, not when it's shown: asleep, the display may be paused (muse_input.c). */
-        muse_state_set_asleep(false);
     }
     const uint8_t *src = (const uint8_t *)pixels;
     for (int row = 0; row < h; row++) {

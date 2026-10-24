@@ -40,6 +40,8 @@
 #include "freertos/task.h"
 
 #include "muse_link.h"
+#include "muse_state.h"
+#include "sdkconfig.h"
 #include "muse_wifi.h"
 
 static const char *TAG = "muse_chat_link";
@@ -639,6 +641,9 @@ static void on_row(row_t *r)
             *att = '\0';
         }
         if (heard[0] && strcmp(heard, "[Voice note]") && !s_turn.heard) {
+#if CONFIG_MUSE_CHAT_VIEW
+            muse_state_chat_post(MUSE_CHAT_USER, heard);   /* the whole transcript, not the caption's tail */
+#endif
             char line[EV_TEXT];
             muse_hatch_tail_words(heard, line, sizeof(line));
             emit(MUSE_HATCH_EV_HEARD, line);
@@ -753,6 +758,11 @@ static void pump(void)
     }
     if (s_turn.replied) {
         if (scroll(now) && now - s_turn.t_reply > SETTLE_US) {
+#if CONFIG_MUSE_CHAT_VIEW
+            if (s_turn.text[0]) {
+                muse_state_chat_post(MUSE_CHAT_ASSISTANT, s_turn.text);   /* before end_turn: the full reply */
+            }
+#endif
             end_turn();
             emit(MUSE_HATCH_EV_DONE, NULL);
         }

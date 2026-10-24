@@ -20,6 +20,7 @@
 #include <stdio.h>
 #include <string.h>
 
+#include "esp_heap_caps.h"
 #include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/event_groups.h"
@@ -157,6 +158,68 @@ void muse_state_page(bool cjk, int *cols, int *lines)
     bool own = cjk && s_cjk_cols > 0;
     *cols = own ? s_cjk_cols : s_page_cols;
     *lines = own ? s_cjk_lines : s_page_lines;
+}
+
+/* ---- Conversation log (chat view) ---- */
+
+typedef struct {
+    muse_chat_role_t role;
+    char text[MUSE_CHAT_TEXT_MAX];
+} chat_msg_t;
+
+static chat_msg_t *s_chat;      /* PSRAM ring, MUSE_CHAT_MAX entries */
+static uint32_t s_chat_seq;     /* messages ever posted */
+
+void muse_state_chat_post(muse_chat_role_t role, const char *text)
+{
+    if (!text || !text[0]) {
+        return;
+    }
+    portENTER_CRITICAL(&s_lock);
+    if (!s_chat) {
+        s_chat = heap_caps_calloc(MUSE_CHAT_MAX, sizeof(chat_msg_t), MALLOC_CAP_SPIRAM);
+        if (!s_chat) {
+            portEXIT_CRITICAL(&s_lock);
+            return;   /* no PSRAM: the log stays empty */
+        }
+    }
+    chat_msg_t *m = &s_chat[s_chat_seq % MUSE_CHAT_MAX];
+    m->role = role;
+    /* Cut at the cap on a UTF-8 edge, so a bubble never ends mid-character. */
+    size_t n = strlen(text);
+    if (n >= sizeof(m->text)) {
+        n = sizeof(m->text) - 1;
+        while (n && (text[n] & 0xC0) == 0x80) {
+            n--;
+        }
+    }
+    memcpy(m->text, text, n);
+    m->text[n] = '\0';
+    s_chat_seq++;
+    portEXIT_CRITICAL(&s_lock);
+}
+
+uint32_t muse_state_chat_count(void)
+{
+    return s_chat_seq;
+}
+
+bool muse_state_chat_get(uint32_t seq, muse_chat_role_t *role, char *out, size_t cap)
+{
+    bool ok = false;
+    portENTER_CRITICAL(&s_lock);
+    if (s_chat && seq < s_chat_seq && s_chat_seq - seq <= MUSE_CHAT_MAX) {
+        const chat_msg_t *m = &s_chat[seq % MUSE_CHAT_MAX];
+        if (role) {
+            *role = m->role;
+        }
+        if (out && cap) {
+            strlcpy(out, m->text, cap);
+        }
+        ok = true;
+    }
+    portEXIT_CRITICAL(&s_lock);
+    return ok;
 }
 
 void muse_state_set_power(const muse_power_t *power)
