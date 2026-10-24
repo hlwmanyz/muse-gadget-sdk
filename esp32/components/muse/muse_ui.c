@@ -1740,7 +1740,16 @@ static void update_status(muse_mode_t mode, float now)
         }
 #endif
         lv_label_set_text(lbl, caption);
-        lv_obj_set_flag(lbl, LV_OBJ_FLAG_HIDDEN, !caption[0]);
+        bool hide = !caption[0];
+#if CONFIG_MUSE_CHAT_VIEW
+        /* While the chat view is up it carries the conversation, so the
+         * bottom caption band stays hidden: this per-frame set_flag is
+         * what kept bringing the bar back after the build hid it. */
+        if (lbl == s_caption_lbl && s_chat_visible) {
+            hide = true;
+        }
+#endif
+        lv_obj_set_flag(lbl, LV_OBJ_FLAG_HIDDEN, hide);
         if (s_reply_lbl) {
             lv_obj_add_flag(answer >= 0 ? s_caption_lbl : s_reply_lbl, LV_OBJ_FLAG_HIDDEN);
         }

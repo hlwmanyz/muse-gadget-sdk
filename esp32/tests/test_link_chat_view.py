@@ -119,6 +119,10 @@ class ChatViewTest(unittest.TestCase):
         # many, so the band is created hidden.
         ui = read("components/muse/muse_ui.c")
         self.assertIn("lv_obj_add_flag(s_caption_lbl, LV_OBJ_FLAG_HIDDEN)", ui)
+        # And the per-frame caption refresh must not undo that hide while
+        # the chat view is up: set_flag(HIDDEN, !caption[0]) resurrected
+        # the band on the first caption of every turn (v21.4's miss).
+        self.assertIn("if (lbl == s_caption_lbl && s_chat_visible)", ui)
 
     def test_chat_scrolls_by_measured_bottom_and_follows_speech(self):
         ui = read("components/muse/muse_ui.c")
@@ -178,7 +182,7 @@ class ChatViewTest(unittest.TestCase):
         self.assertIn(".talk_hint = { LV_ALIGN_DEFAULT, 0, 0 }", board)
 
     def test_version(self):
-        self.assertIn('set(PROJECT_VER "21.5")', read("CMakeLists.txt"))
+        self.assertIn('set(PROJECT_VER "21.6")', read("CMakeLists.txt"))
 
 
 if __name__ == "__main__":
