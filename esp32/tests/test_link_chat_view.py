@@ -229,7 +229,7 @@ class ChatViewTest(unittest.TestCase):
         self.assertIn("muse_state_caption_progress", state)
 
     def test_version(self):
-        self.assertIn('set(PROJECT_VER "21.9")', read("CMakeLists.txt"))
+        self.assertIn('set(PROJECT_VER "21.10")', read("CMakeLists.txt"))
 
 
 if __name__ == "__main__":

@@ -50,6 +50,7 @@
 #include <new>
 
 #include <ctime>
+#include <sys/time.h>
 
 #include "esp_attr.h"
 #include "esp_crt_bundle.h"
@@ -2383,8 +2384,21 @@ static bool edge_tts_fetch(const char *text, const char *voice)
     int r = edge_tts_attempt(text, voice, time(nullptr) + s_skew, head, sizeof(head));
     if (r == -1) {
         int64_t server = edge_http_date(head);
-        int64_t skew = server - time(nullptr);
-        if (server > 0 && skew != s_skew && skew > -7 * 86400 && skew < 7 * 86400) {
+        int64_t now = time(nullptr);
+        int64_t skew = server - now;
+        if (server > 0 && now < 1704067200) {
+            /* The clock was never set (still near the epoch: SNTP has not
+             * landed yet), so the skew to the server's Date is decades and
+             * the sanity window below would refuse it — leaving the first
+             * reply after boot silent. The Date came over a validated TLS
+             * session, so set the clock from it outright and retry. */
+            struct timeval tv = { .tv_sec = (time_t)server, .tv_usec = 0 };
+            if (settimeofday(&tv, nullptr) == 0) {
+                ESP_LOGW(TAG, "Edge TTS: clock was unset; set it from the server Date");
+                s_skew = 0;
+                r = edge_tts_attempt(text, voice, time(nullptr), head, sizeof(head));
+            }
+        } else if (server > 0 && skew != s_skew && skew > -7 * 86400 && skew < 7 * 86400) {
             ESP_LOGW(TAG, "Edge TTS: retrying with clock skew %+llds from the server Date", (long long)skew);
             s_skew = skew;
             r = edge_tts_attempt(text, voice, time(nullptr) + s_skew, head, sizeof(head));
