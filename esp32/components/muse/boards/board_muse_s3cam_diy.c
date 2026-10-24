@@ -617,7 +617,7 @@ static const muse_board_t s_board = {
     /* BOOT is the only button, so it also wakes the screen and the chip. */
     .talk_button = "boot",
     .aux_button = "boot",
-    .talk_hint = { LV_ALIGN_BOTTOM_RIGHT, -16, -8 },
+    .talk_hint = { LV_ALIGN_DEFAULT, 0, 0 },   /* no mic glyph: the wake word is the button */
     .frame_ms = 40,
     .init = init,
     .display_start = display_start,

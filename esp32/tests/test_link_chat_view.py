@@ -123,7 +123,14 @@ class ChatViewTest(unittest.TestCase):
     def test_chat_scrolls_by_measured_bottom_and_follows_speech(self):
         ui = read("components/muse/muse_ui.c")
         self.assertIn("lv_obj_get_scroll_bottom(s_chat_list)", ui)
-        self.assertIn("lv_obj_scroll_to_view(last, LV_ANIM_OFF)", ui)
+        # The follow target only moves down: a question re-anchors at the
+        # bottom, a reply at its top, and the spoken walk steps one line.
+        sync = ui[ui.index("static void chat_sync"):]
+        sync = sync[:sync.index("static void chat_build")]
+        self.assertIn("follow_y", sync)
+        self.assertIn("follow_y += lv_font_get_line_height(chat_font()) + 4", sync)
+        self.assertNotIn("scroll_to_view", sync)
+        self.assertNotIn("* 3 / 4", sync)
 
     def test_board_frame_matches_the_glass(self):
         # The DIY panel's glass shows 240 of the controller's 320 rows;
@@ -133,8 +140,45 @@ class ChatViewTest(unittest.TestCase):
         # And the face fills the little square screen.
         self.assertIn(".avatar_px = 216", board)
 
+    def test_note_bubble_marks_the_turn_with_its_duration(self):
+        # The note transcript never returns to the device (the subscribe
+        # stream sends no message.user row for note turns), so the user's
+        # bubble marks the turn with the note's length when it is sent.
+        session = read("components/muse/muse_chat_session.cpp")
+        self.assertIn("语音 %d 秒", session)
+        self.assertIn("muse_state_chat_post(MUSE_CHAT_USER, bubble)", session)
+
+    def test_wake_endpoint_measures_loud_against_the_room(self):
+        # An absolute loud line sits inside a living room's ambient band
+        # and every note ran to the 15 s cap; the line is the recording's
+        # own floor plus headroom, clamped.
+        voice = read("components/muse/muse_voice.c")
+        self.assertIn("st.floor_db + WAKE_LOUD_MARGIN_DB", voice)
+        self.assertIn("WAKE_LOUD_MIN_DB", voice)
+        self.assertIn("WAKE_LOUD_MAX_DB", voice)
+        self.assertNotIn("> WAKE_LOUD_DB)", voice)
+
+    def test_voice_turns_chain_without_the_wake_word(self):
+        # A replied-to voice turn re-opens the mic (continuous
+        # conversation); the follow-up listen gets a longer give-up, and
+        # a silent one ends the chain through the speechless drop.
+        voice = read("components/muse/muse_voice.c")
+        self.assertIn("FOLLOWUP_GIVEUP_FRAMES", voice)
+        self.assertIn("s_followup ? FOLLOWUP_GIVEUP_FRAMES : WAKE_GIVEUP_FRAMES", voice)
+        self.assertIn("follow-up: listening again", voice)
+        self.assertIn("s_replied = delivered", voice)
+
+    def test_board_can_leave_the_mic_glyph_out(self):
+        # build_button_icons honours a left-out talk_hint (the aux icon's
+        # long-standing pattern), and this board leaves it out: on a
+        # wake-word board the word is the button.
+        ui = read("components/muse/muse_ui.c")
+        self.assertIn("leaves talk_hint out", ui)
+        board = read("components/muse/boards/board_muse_s3cam_diy.c")
+        self.assertIn(".talk_hint = { LV_ALIGN_DEFAULT, 0, 0 }", board)
+
     def test_version(self):
-        self.assertIn('set(PROJECT_VER "21.4")', read("CMakeLists.txt"))
+        self.assertIn('set(PROJECT_VER "21.5")', read("CMakeLists.txt"))
 
 
 if __name__ == "__main__":

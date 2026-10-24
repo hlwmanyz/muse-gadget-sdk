@@ -102,13 +102,18 @@ static int s_settle;
 #if CONFIG_MUSE_WAKEWORD
 static bool s_wake_hit;           /* the detector heard the word (set in idle_capture) */
 static bool s_wake_record;        /* the record() running now is a wake-word one */
+static bool s_followup;           /* the record() running now is a continuous-conversation listen */
+static bool s_replied;            /* the last finish_note() got its reply out */
 static bool s_wake_heard;         /* it has heard a chunk loud enough to be speech */
 static bool s_wake_speechless;    /* it ended having heard none: a false wake */
 static size_t s_wake_last_loud;   /* frame count at the last loud chunk */
-#define WAKE_LOUD_DB (-48.0f)     /* a chunk louder than this counts as speech */
+#define WAKE_LOUD_MARGIN_DB 12.0f   /* a chunk this far above the room's floor counts as speech */
+#define WAKE_LOUD_MIN_DB (-44.0f)   /* the adaptive loud line never sits below this... */
+#define WAKE_LOUD_MAX_DB (-36.0f)   /* ...nor above this */
 #define WAKE_MIN_FRAMES (MUSE_AUDIO_RATE * 4 / 5)    /* 0.8 s in, before quiet may end it */
 #define WAKE_QUIET_FRAMES (MUSE_AUDIO_RATE)          /* 1.0 s of quiet ends the note */
 #define WAKE_GIVEUP_FRAMES (MUSE_AUDIO_RATE * 3)     /* 3 s with no speech at all */
+#define FOLLOWUP_GIVEUP_FRAMES (MUSE_AUDIO_RATE * 6)   /* a follow-up listen waits longer for its answer */
 #endif
 
 /*
@@ -354,7 +359,15 @@ static bool record(bool barge_in, size_t *held, char *why, size_t cap)
              * second after the last chunk loud enough to be speech. If
              * nothing loud ever comes (a false wake), it ends at 3 s and
              * the caller drops it rather than sending silence. */
-            if (muse_audio_dbfs(s_chunk, MUSE_AUDIO_CHUNK) > WAKE_LOUD_DB) {
+            /* "Loud" is measured against the room, not an absolute line:
+             * this recording's own floor plus headroom, clamped. An
+             * absolute -48 dBFS sits inside a living room's ambient band,
+             * so the tail never counted as quiet and every note ran out
+             * the full 15 s before it could be sent. */
+            float loud_db = st.floor_db + WAKE_LOUD_MARGIN_DB;
+            if (loud_db < WAKE_LOUD_MIN_DB) loud_db = WAKE_LOUD_MIN_DB;
+            if (loud_db > WAKE_LOUD_MAX_DB) loud_db = WAKE_LOUD_MAX_DB;
+            if (muse_audio_dbfs(s_chunk, MUSE_AUDIO_CHUNK) > loud_db) {
                 s_wake_heard = true;
                 s_wake_last_loud = n;
             }
@@ -362,7 +375,7 @@ static bool record(bool barge_in, size_t *held, char *why, size_t cap)
                 && n - s_wake_last_loud >= WAKE_QUIET_FRAMES) {
                 released = true;
                 stop_at = n + TAIL_FRAMES < MAX_FRAMES ? n + TAIL_FRAMES : MAX_FRAMES;
-            } else if (!s_wake_heard && n - pre >= WAKE_GIVEUP_FRAMES) {
+            } else if (!s_wake_heard && n - pre >= (s_followup ? FOLLOWUP_GIVEUP_FRAMES : WAKE_GIVEUP_FRAMES)) {
                 s_wake_speechless = true;
                 released = true;
                 stop_at = n;
@@ -769,6 +782,7 @@ static bool held_due(void)
 static bool finish_note(void)
 {
     bool delivered;
+    s_replied = false;
 #if HOLD_NOTES
     if (s_rec) {
         bool fed = false, interrupted = false;
@@ -789,6 +803,7 @@ static bool finish_note(void)
         }
         if (fed) {
             interrupted = hatch_reply(&delivered);
+            s_replied = delivered;
         }
         if (delivered || interrupted) {
             drop_rec();
@@ -800,7 +815,9 @@ static bool finish_note(void)
 #endif
     muse_hatch_turn_end();   /* before the chirp, which takes ~90 ms */
     muse_audio_chirp(0);
-    return hatch_reply(&delivered);
+    bool interrupted = hatch_reply(&delivered);
+    s_replied = delivered;
+    return interrupted;
 }
 
 /*
@@ -931,45 +948,72 @@ static void voice_task(void *arg)
             voice_wake = false;
             continue;
         }
-        size_t held;
-        char why[96];
 #if CONFIG_MUSE_WAKEWORD
-        s_wake_record = voice_wake;
+        bool voice_chain = voice_wake;   /* this conversation began with the word */
+        bool follow = false;             /* this pass is a follow-up listen */
 #endif
-        bool ok = record(pending_down, &held, why, sizeof(why));
-        pending_down = false;
+        for (;;) {
 #if CONFIG_MUSE_WAKEWORD
-        s_wake_record = false;
-        if (voice_wake && s_wake_speechless) {
-            /* A false wake: nothing followed the word. Drop it quietly
-             * instead of sending Muse a note of silence. */
-            ESP_LOGI(TAG, "wake word: nothing followed, dropping it");
+            if (follow && !can_record()) {
+                break;
+            }
+#endif
+            size_t held;
+            char why[96];
+#if CONFIG_MUSE_WAKEWORD
+            s_wake_record = voice_wake || follow;
+            s_followup = follow;
+#endif
+            bool ok = record(pending_down, &held, why, sizeof(why));
+            pending_down = false;
+#if CONFIG_MUSE_WAKEWORD
+            s_wake_record = false;
+            s_followup = false;
+            if ((voice_wake || follow) && s_wake_speechless) {
+                /* Nothing followed: a false wake, or the end of a
+                 * conversation. Drop it quietly instead of sending Muse
+                 * a note of silence. */
+                ESP_LOGI(TAG, "wake word: nothing followed, dropping it");
+                voice_wake = false;
+                muse_hatch_turn_cancel();
+                drop_rec();
+                pre_reset();
+                go_idle("");
+                break;
+            }
             voice_wake = false;
-            muse_hatch_turn_cancel();
-            drop_rec();
-            pre_reset();
-            go_idle("");
-            continue;
-        }
-        voice_wake = false;
 #endif
-        if (held < MIN_HELD_FRAMES && !wake && !voice_wake) {
-            muse_hatch_turn_cancel();
-            drop_rec();
+            if (held < MIN_HELD_FRAMES && !wake && !voice_wake) {
+                muse_hatch_turn_cancel();
+                drop_rec();
+                pre_reset();
+                go_idle("HOLD LONGER TO TALK");
+                break;
+            }
+            if (!ok) {
+                pre_reset();
+                go_idle(why);   /* Hatch failed it while recording */
+                break;
+            }
+            pending_down = finish_note();
             pre_reset();
-            go_idle("HOLD LONGER TO TALK");
-            continue;
-        }
-        if (!ok) {
-            pre_reset();
-            go_idle(why);   /* Hatch failed it while recording */
-            continue;
-        }
-        pending_down = finish_note();
-        pre_reset();
-        if (!pending_down && muse_state_mode(NULL) != MUSE_MODE_IDLE) {
-            muse_state_make_happy();
-            go_idle("");
+#if CONFIG_MUSE_WAKEWORD
+            /* Continuous conversation: a voice turn that got its reply
+             * opens the mic again at once -- no wake word -- and keeps
+             * doing so while answers keep coming. A listen that hears
+             * nothing ends the chain through the speechless drop above. */
+            if (!pending_down && s_replied && voice_chain) {
+                follow = true;
+                muse_state_poke();
+                ESP_LOGI(TAG, "follow-up: listening again");
+                continue;
+            }
+#endif
+            if (!pending_down && muse_state_mode(NULL) != MUSE_MODE_IDLE) {
+                muse_state_make_happy();
+                go_idle("");
+            }
+            break;
         }
     }
 }

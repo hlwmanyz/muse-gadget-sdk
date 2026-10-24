@@ -476,16 +476,20 @@ static void build_button_icons(lv_obj_t *face)
 {
     if (muse_board->rim_controls) return;   /* dedicated rim hints below */
     const muse_button_hint_t *t = &muse_board->talk_hint, *a = &muse_board->aux_hint;
-    s_mic_icon = make_mic(face, s_tall ? 24 : s_small ? 12 : 26);
-    lv_obj_align(s_mic_icon, t->align, t->x, t->y);
-    set_mic_color(COLOR_DIM);
-    if (muse_board->touch_talk) {
-        lv_obj_add_flag(s_mic_icon, LV_OBJ_FLAG_CLICKABLE);
-        lv_obj_set_ext_click_area(s_mic_icon, 12);
-        for (uint32_t i = 0; i < lv_obj_get_child_count(s_mic_icon); i++) {
-            lv_obj_remove_flag(lv_obj_get_child(s_mic_icon, i), LV_OBJ_FLAG_CLICKABLE);
+    /* A board that leaves talk_hint out has no button to put a mic beside:
+     * on a wake-word board the word is the button, and the glyph is clutter. */
+    if (t->align != LV_ALIGN_DEFAULT) {
+        s_mic_icon = make_mic(face, s_tall ? 24 : s_small ? 12 : 26);
+        lv_obj_align(s_mic_icon, t->align, t->x, t->y);
+        set_mic_color(COLOR_DIM);
+        if (muse_board->touch_talk) {
+            lv_obj_add_flag(s_mic_icon, LV_OBJ_FLAG_CLICKABLE);
+            lv_obj_set_ext_click_area(s_mic_icon, 12);
+            for (uint32_t i = 0; i < lv_obj_get_child_count(s_mic_icon); i++) {
+                lv_obj_remove_flag(lv_obj_get_child(s_mic_icon, i), LV_OBJ_FLAG_CLICKABLE);
+            }
+            lv_obj_add_event_cb(s_mic_icon, on_touch_mic, LV_EVENT_ALL, NULL);
         }
-        lv_obj_add_event_cb(s_mic_icon, on_touch_mic, LV_EVENT_ALL, NULL);
     }
 
     /* Without touch the aux button opens the menu rather than sleeping. A board
@@ -1231,7 +1235,14 @@ static void chat_sync(muse_mode_t mode, float now)
     if (!s_chat_visible) {
         return;
     }
+    /* The follow target only ever moves down within a conversation: a new
+     * question re-anchors at the end of the log, a new reply at its top,
+     * and the spoken walk below steps one line at a time. Nothing scrolls
+     * back up, so a long answer reads as a steady page-down, not a yo-yo
+     * between where the walk had reached and a new bubble's top. */
+    static int32_t follow_y = -1;
     bool added = false;
+    muse_chat_role_t last_role = MUSE_CHAT_ASSISTANT;
     while (s_chat_rendered < count) {
         muse_chat_role_t role;
         static char text[MUSE_CHAT_TEXT_MAX];   /* the LVGL task's stack is spoken for */
@@ -1239,11 +1250,13 @@ static void chat_sync(muse_mode_t mode, float now)
             /* Evicted before it was ever shown: start from what's kept. */
             s_chat_rendered = count > MUSE_CHAT_MAX ? count - MUSE_CHAT_MAX : 0;
             lv_obj_clean(s_chat_list);
+            follow_y = -1;
             continue;
         }
         chat_add_bubble(role, text);
         s_chat_rendered++;
         s_chat_until = now + CHAT_LINGER_S;
+        last_role = role;
         added = true;
     }
     while (lv_obj_get_child_count(s_chat_list) > MUSE_CHAT_MAX) {
@@ -1252,23 +1265,35 @@ static void chat_sync(muse_mode_t mode, float now)
     if (added) {
         lv_obj_update_layout(s_chat_list);
         lv_obj_t *last = lv_obj_get_child(s_chat_list, lv_obj_get_child_count(s_chat_list) - 1);
-        if (last && lv_obj_get_height(last) > lv_obj_get_height(s_chat_list)) {
-            /* A bubble taller than the view starts at its top; the walk
-             * below moves the view down it as it is spoken. */
-            lv_obj_scroll_to_view(last, LV_ANIM_OFF);
-        } else {
-            lv_obj_scroll_to_y(s_chat_list, lv_obj_get_scroll_bottom(s_chat_list), LV_ANIM_OFF);
+        if (last) {
+            int32_t bottom = lv_obj_get_scroll_bottom(s_chat_list);
+            if (last_role == MUSE_CHAT_USER) {
+                follow_y = bottom;   /* the question, shown whole */
+            } else if (follow_y < lv_obj_get_y(last)) {
+                follow_y = lv_obj_get_y(last);   /* the reply starts at its top */
+            }
+            if (follow_y > bottom) {
+                follow_y = bottom;
+            }
+            if (follow_y > lv_obj_get_scroll_y(s_chat_list)) {
+                lv_obj_scroll_to_y(s_chat_list, follow_y, LV_ANIM_OFF);
+            }
         }
     }
-    /* Follow the speech: a fresh caption page means roughly another
-     * screenful has been spoken, so walk down by most of a viewport. */
-    if (mode == MUSE_MODE_SPEAKING) {
+    /* Follow the speech one line at a time: each fresh caption page is
+     * another spoken line, so step a single text line down the reply. */
+    if (mode == MUSE_MODE_SPEAKING && follow_y >= 0) {
         static uint32_t cap_ver;
         static char cap[8];
         if (muse_state_caption(cap, sizeof(cap), &cap_ver)) {
             int32_t bottom = lv_obj_get_scroll_bottom(s_chat_list);
-            int32_t y = lv_obj_get_scroll_y(s_chat_list) + lv_obj_get_height(s_chat_list) * 3 / 4;
-            lv_obj_scroll_to_y(s_chat_list, y < bottom ? y : bottom, LV_ANIM_OFF);
+            follow_y += lv_font_get_line_height(chat_font()) + 4;
+            if (follow_y > bottom) {
+                follow_y = bottom;
+            }
+            if (follow_y > lv_obj_get_scroll_y(s_chat_list)) {
+                lv_obj_scroll_to_y(s_chat_list, follow_y, LV_ANIM_OFF);
+            }
         }
     }
 }

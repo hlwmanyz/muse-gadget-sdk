@@ -1171,6 +1171,16 @@ static bool record_note(void)
         return false;
     }
     ESP_LOGI(TAG, "voice note: %.2fs, %u byte request", secs, (unsigned)s_turn.body_sent);
+#if CONFIG_MUSE_CHAT_VIEW
+    /* A note's transcript never comes back to the device, so the user's
+     * bubble cannot carry their words. It marks the turn the way a voice
+     * message shows its duration instead. */
+    {
+        char bubble[24];
+        snprintf(bubble, sizeof(bubble), "语音 %d 秒", (int)(secs + 0.5));
+        muse_state_chat_post(MUSE_CHAT_USER, bubble);
+    }
+#endif
     mark(M_SENT);
     s_turn.chat_posted = true;
     s_turn.chat_us = s_turn.last_event_us = now_us();
