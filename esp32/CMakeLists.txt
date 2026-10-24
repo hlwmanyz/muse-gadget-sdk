@@ -18,6 +18,6 @@ include("${CMAKE_CURRENT_LIST_DIR}/cmake/project.cmake")
 # esp_app_get_description()->version: the gadget's settings screen and
 # menu, the "@status" reply's "fw" field (which the flasher page shows
 # in Gadget settings), and the boot log. Bump on every release.
-set(PROJECT_VER "21.1")
+set(PROJECT_VER "21.2")
 project(muse-gadget)
 include("${CMAKE_CURRENT_LIST_DIR}/cmake/validate_config.cmake")

@@ -95,8 +95,36 @@ class ChatViewTest(unittest.TestCase):
         self.assertLess(draw.index("if (muse_state_asleep())"),
                         draw.index("heap_caps_calloc"))
 
+    def test_session_takes_the_note_transcript_row(self):
+        # A note turn's words only come back as a message.user row on the
+        # subscription; the session backend must post them (once, matched
+        # to this turn's ack id) or note turns show no user bubble.
+        session = read("components/muse/muse_chat_session.cpp")
+        self.assertIn('"message.user"', session)
+        self.assertIn("muse_state_chat_post(MUSE_CHAT_USER, clean)", session)
+
+    def test_chat_font_is_a_step_up_with_the_full_font_behind_it(self):
+        ui = read("components/muse/muse_ui.c")
+        self.assertIn("chat_font()", ui)
+        self.assertIn("muse_font_cjk_20", ui)
+        self.assertIn("lv_obj_set_style_text_font(lbl, chat_font(), 0)", ui)
+        cmake = read("components/muse/CMakeLists.txt")
+        self.assertIn('CONFIG_MUSE_CJK_FONT AND CONFIG_MUSE_CHAT_VIEW', cmake)
+        self.assertIn("fonts/muse_font_cjk_20.c", cmake)
+
+    def test_chat_scrolls_by_measured_bottom_and_follows_speech(self):
+        ui = read("components/muse/muse_ui.c")
+        self.assertIn("lv_obj_get_scroll_bottom(s_chat_list)", ui)
+        self.assertIn("lv_obj_scroll_to_view(last, LV_ANIM_OFF)", ui)
+
+    def test_board_frame_matches_the_glass(self):
+        # The DIY panel's glass shows 240 of the controller's 320 rows;
+        # a 320-tall frame draws its bottom quarter off the glass.
+        board = read("components/muse/boards/board_muse_s3cam_diy.c")
+        self.assertIn("#define LCD_H 240", board)
+
     def test_version(self):
-        self.assertIn('set(PROJECT_VER "21.1")', read("CMakeLists.txt"))
+        self.assertIn('set(PROJECT_VER "21.2")', read("CMakeLists.txt"))
 
 
 if __name__ == "__main__":

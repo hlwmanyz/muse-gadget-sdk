@@ -1454,11 +1454,42 @@ static void on_event(cJSON *line)
         }
         s_last_seq = v > s_last_seq ? v : s_last_seq;
     }
+    const char *event = cJSON_GetStringValue(cJSON_GetObjectItem(line, "event")) ?: "";
+    cJSON *payload = cJSON_GetObjectItem(line, "payload");
+
+    if (!strcmp(event, "message.user")) {
+        /* A recorded note's transcript coming back on the subscription:
+         * the only place a note turn's words reach the device. Matched to
+         * this turn by the ack's id and posted once (chat_posted is the
+         * same flag post_chat sets, so a dictated turn's echo of its own
+         * text message doesn't post twice). */
+        const char *id = msg_id(payload, line);
+        const char *text = cJSON_GetStringValue(cJSON_GetObjectItem(payload, "text"));
+        if (!text) {
+            text = cJSON_GetStringValue(cJSON_GetObjectItem(payload, "content"));
+        }
+        ESP_LOGI(TAG, "user row: id=%s text=%u bytes posted=%d", id ? id : "-",
+                 text ? (unsigned)strlen(text) : 0, (int)s_turn.chat_posted);
+#if CONFIG_MUSE_CHAT_VIEW
+        if (text && text[0] && !s_turn.chat_posted &&
+            (!id || !s_turn.user_ids[0][0] || !strcmp(id, s_turn.user_ids[0]))) {
+            char clean[1024];
+            strlcpy(clean, text, sizeof(clean));
+            char *suffix = strstr(clean, "\n[file:");
+            if (suffix) {
+                *suffix = '\0';
+            }
+            if (clean[0] && strcmp(clean, "[Voice note]")) {
+                muse_state_chat_post(MUSE_CHAT_USER, clean);
+                s_turn.chat_posted = true;
+            }
+        }
+#endif
+        return;
+    }
     if (s_turn.phase != P_WAIT_REPLY) {
         return;
     }
-    const char *event = cJSON_GetStringValue(cJSON_GetObjectItem(line, "event")) ?: "";
-    cJSON *payload = cJSON_GetObjectItem(line, "payload");
 
     if (!strcmp(event, "agent.status") || !strcmp(event, "task.status")) {
         const char *code = cJSON_GetStringValue(cJSON_GetObjectItem(payload, "activity_code"));

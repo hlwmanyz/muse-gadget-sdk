@@ -512,6 +512,9 @@ static const lv_font_t *font_pick(const lv_font_t *full, const lv_font_t *compac
 #if CONFIG_MUSE_CJK_FONT
 LV_FONT_DECLARE(muse_font_cjk_16)
 #endif
+#if CONFIG_MUSE_CJK_FONT && CONFIG_MUSE_CHAT_VIEW
+LV_FONT_DECLARE(muse_font_cjk_20)
+#endif
 
 /* unscii-16 for captions and replies; with CONFIG_MUSE_CJK_FONT, a copy that
  * falls back to Unifont's 16x16 CJK, the same cell, for what unscii lacks. */
@@ -1145,6 +1148,28 @@ static void update_control_hints(muse_mode_t mode)
 
 #define CHAT_LINGER_S 25.0f   /* the reply stays readable this long after a turn */
 
+/* The bubbles' font: a step up from the captions so a reply is easy to
+ * read -- Montserrat 20 for Latin. With the CJK font on, its fallback is
+ * a 20 px Unifont subset (GB2312 symbols + level-1 hanzi), which falls
+ * back in turn to the full 16 px CJK font, so a rarer character still
+ * renders, just at caption size. */
+static const lv_font_t *chat_font(void)
+{
+#if CONFIG_MUSE_CJK_FONT
+    static lv_font_t big;
+    static lv_font_t cjk;
+    if (!cjk.get_glyph_dsc) {
+        cjk = muse_font_cjk_20;
+        cjk.fallback = &muse_font_cjk_16;
+        big = lv_font_montserrat_20;
+        big.fallback = &cjk;
+    }
+    return &big;
+#else
+    return &lv_font_montserrat_20;
+#endif
+}
+
 static void chat_add_bubble(muse_chat_role_t role, const char *text)
 {
     bool user = role == MUSE_CHAT_USER;
@@ -1169,7 +1194,8 @@ static void chat_add_bubble(muse_chat_role_t role, const char *text)
     lv_obj_remove_flag(bub, LV_OBJ_FLAG_SCROLLABLE);
 
     lv_obj_t *lbl = lv_label_create(bub);
-    lv_obj_set_style_text_font(lbl, caption_font(), 0);
+    lv_obj_set_style_text_font(lbl, chat_font(), 0);
+    lv_obj_set_style_text_line_space(lbl, 4, 0);
     lv_obj_set_style_text_color(lbl, lv_color_hex(0x111111), 0);
     lv_obj_set_style_text_align(lbl, LV_TEXT_ALIGN_LEFT, 0);
     lv_label_set_long_mode(lbl, LV_LABEL_LONG_MODE_WRAP);
@@ -1222,7 +1248,25 @@ static void chat_sync(muse_mode_t mode, float now)
     }
     if (added) {
         lv_obj_update_layout(s_chat_list);
-        lv_obj_scroll_to_y(s_chat_list, LV_COORD_MAX, LV_ANIM_OFF);
+        lv_obj_t *last = lv_obj_get_child(s_chat_list, lv_obj_get_child_count(s_chat_list) - 1);
+        if (last && lv_obj_get_height(last) > lv_obj_get_height(s_chat_list)) {
+            /* A bubble taller than the view starts at its top; the walk
+             * below moves the view down it as it is spoken. */
+            lv_obj_scroll_to_view(last, LV_ANIM_OFF);
+        } else {
+            lv_obj_scroll_to_y(s_chat_list, lv_obj_get_scroll_bottom(s_chat_list), LV_ANIM_OFF);
+        }
+    }
+    /* Follow the speech: a fresh caption page means roughly another
+     * screenful has been spoken, so walk down by most of a viewport. */
+    if (mode == MUSE_MODE_SPEAKING) {
+        static uint32_t cap_ver;
+        static char cap[8];
+        if (muse_state_caption(cap, sizeof(cap), &cap_ver)) {
+            int32_t bottom = lv_obj_get_scroll_bottom(s_chat_list);
+            int32_t y = lv_obj_get_scroll_y(s_chat_list) + lv_obj_get_height(s_chat_list) * 3 / 4;
+            lv_obj_scroll_to_y(s_chat_list, y < bottom ? y : bottom, LV_ANIM_OFF);
+        }
     }
 }
 

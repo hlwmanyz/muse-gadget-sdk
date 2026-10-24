@@ -16,7 +16,8 @@
 
 /*
  * Bread Compact WiFi S3CAM: ESP32-S3-WROOM-1 (16 MB flash, 8 MB octal
- * PSRAM), 240x320 ST7789 SPI LCD (no touch), I2S MEMS mic, MAX98357A I2S
+ * PSRAM), ST7789 SPI LCD (no touch; 240x240 glass on a 320-row
+ * controller -- see LCD_H), I2S MEMS mic, MAX98357A I2S
  * amp driving the speaker, BOOT button on GPIO0, built-in LED on GPIO48
  * (unused: status shows on the display). No codec chip, no battery.
  * Pins follow xiaozhi-esp32's bread-compact-wifi-s3cam board
@@ -66,7 +67,7 @@
 static const char *TAG = "board";
 
 #define LCD_W 240
-#define LCD_H 320
+#define LCD_H 240   /* the glass is 240 rows: the controller's GRAM is 320, but only the first 240 rows are on the glass -- a 320-tall frame would draw its bottom quarter where nobody can see it */
 #define LCD_HOST SPI3_HOST
 #define LCD_SCLK GPIO_NUM_19
 #define LCD_MOSI GPIO_NUM_20
