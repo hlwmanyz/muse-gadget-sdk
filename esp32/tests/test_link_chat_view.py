@@ -181,22 +181,30 @@ class ChatViewTest(unittest.TestCase):
         board = read("components/muse/boards/board_muse_s3cam_diy.c")
         self.assertIn(".talk_hint = { LV_ALIGN_DEFAULT, 0, 0 }", board)
 
-    def test_wake_word_alone_never_sends_a_note(self):
-        # 21.5's regression: the word plus a one-second pause was sent on
-        # its own (chirp and all) and the question arrived inside the
-        # 0.12 s tail. The word only opens the turn; speech counts as
-        # the question once it runs past the word's span or restarts
-        # after a gap, and a word with no question behind it is dropped
-        # quietly at the question give-up.
+    def test_wake_turn_ends_two_and_a_half_seconds_after_speech(self):
+        # 21.5's regression: the note ended one second after the word,
+        # so the question never got recorded. A wake turn now records
+        # normally and ends 2.5 s after the speaker stops -- a window
+        # that covers both the beat after the word and the end of the
+        # question.
+        voice = read("components/muse/muse_voice.c")
+        self.assertIn("WAKE_QUESTION_QUIET_FRAMES (MUSE_AUDIO_RATE * 5 / 2)", voice)
+        self.assertIn("n - s_wake_last_loud >= WAKE_QUESTION_QUIET_FRAMES", voice)
+        self.assertNotIn("WAKE_QUIET_FRAMES", voice)
+
+    def test_followup_listen_drops_speech_that_never_becomes_a_question(self):
+        # A follow-up listen is stricter than a wake turn: stray sounds
+        # must grow into a real question (past the word's span, or
+        # restarting after a gap) or the listen is dropped quietly at
+        # its give-up instead of sending noise on its own.
         voice = read("components/muse/muse_voice.c")
         self.assertIn("s_wake_confirmed", voice)
         self.assertIn("WAKE_WORD_SPAN_FRAMES", voice)
         self.assertIn("WAKE_GAP_FRAMES", voice)
-        self.assertIn("WAKE_QUESTION_GIVEUP_FRAMES", voice)
-        self.assertIn("The word, but no question followed.", voice)
+        self.assertIn("A follow-up listen that never grew into a question.", voice)
 
     def test_version(self):
-        self.assertIn('set(PROJECT_VER "21.7")', read("CMakeLists.txt"))
+        self.assertIn('set(PROJECT_VER "21.8")', read("CMakeLists.txt"))
 
 
 if __name__ == "__main__":

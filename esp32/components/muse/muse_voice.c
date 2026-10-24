@@ -102,7 +102,7 @@ static int s_settle;
 #if CONFIG_MUSE_WAKEWORD
 static bool s_wake_hit;           /* the detector heard the word (set in idle_capture) */
 static bool s_wake_record;        /* the record() running now is a wake-word one */
-static bool s_wake_confirmed;     /* the question (past the wake word) has actually started */
+static bool s_wake_confirmed;     /* this follow-up listen grew into a real question */
 static bool s_followup;           /* the record() running now is a continuous-conversation listen */
 static bool s_replied;            /* the last finish_note() got its reply out */
 static bool s_wake_heard;         /* it has heard a chunk loud enough to be speech */
@@ -112,12 +112,11 @@ static size_t s_wake_last_loud;   /* frame count at the last loud chunk */
 #define WAKE_LOUD_MIN_DB (-44.0f)   /* the adaptive loud line never sits below this... */
 #define WAKE_LOUD_MAX_DB (-36.0f)   /* ...nor above this */
 #define WAKE_MIN_FRAMES (MUSE_AUDIO_RATE * 4 / 5)    /* 0.8 s in, before quiet may end it */
-#define WAKE_QUIET_FRAMES (MUSE_AUDIO_RATE)          /* 1.0 s of quiet ends the note */
+#define WAKE_QUESTION_QUIET_FRAMES (MUSE_AUDIO_RATE * 5 / 2)   /* 2.5 s of quiet after speech ends the note */
 #define WAKE_GIVEUP_FRAMES (MUSE_AUDIO_RATE * 3)     /* 3 s with no speech at all */
 #define FOLLOWUP_GIVEUP_FRAMES (MUSE_AUDIO_RATE * 6)   /* a follow-up listen waits longer for its answer */
 #define WAKE_WORD_SPAN_FRAMES (MUSE_AUDIO_RATE * 6 / 5)   /* speech still going this far in is the question, not the word */
-#define WAKE_GAP_FRAMES (MUSE_AUDIO_RATE * 2 / 5)         /* a gap this long, then speech again, is the question starting */
-#define WAKE_QUESTION_GIVEUP_FRAMES (MUSE_AUDIO_RATE * 4)   /* the word, but no question within this long, is dropped */
+#define WAKE_GAP_FRAMES (MUSE_AUDIO_RATE / 4)             /* a gap this long, then speech again, is the question starting */
 #endif
 
 /*
@@ -360,18 +359,17 @@ static bool record(bool barge_in, size_t *held, char *why, size_t cap)
          */
 #if CONFIG_MUSE_WAKEWORD
         if (s_wake_record && !released) {
-            /* A wake-word note has no button to let go, and the word
-             * itself is not the question: it only opens the turn.
-             * Speech counts as the question once it is still going
-             * 1.2 s in, or starts again after a short gap -- until
-             * then, quiet does not end the note, so the pause while
-             * the speaker gathers the question cannot cut it off
-             * (the 21.5 regression: the word plus a one-second pause
-             * was sent on its own, chirp and all, and the question
-             * arrived inside the 0.12 s tail). Once the question is
-             * underway, a second of quiet ends it. If no question
-             * ever comes, the note is dropped quietly instead of
-             * sending the word on its own. */
+            /* A wake-word note has no button to let go. After the word
+             * the note records normally and ends 2.5 s after the
+             * speaker stops: that window covers both the beat people
+             * take after the word before asking, and the end of the
+             * question, so neither can cut the recording off (the
+             * 21.5 regression cut it one second after the word).
+             * A follow-up listen is stricter: stray sounds must grow
+             * into a real question -- still going 1.2 s in, or
+             * restarting after a gap -- or the listen is dropped
+             * quietly at its give-up instead of sending noise on
+             * its own. */
             /* "Loud" is measured against the room, not an absolute line:
              * this recording's own floor plus headroom, clamped. An
              * absolute -48 dBFS sits inside a living room's ambient band,
@@ -383,15 +381,15 @@ static bool record(bool barge_in, size_t *held, char *why, size_t cap)
             if (muse_audio_dbfs(s_chunk, MUSE_AUDIO_CHUNK) > loud_db) {
                 if (!s_wake_heard) {
                     s_wake_heard = true;
-                } else if (!s_wake_confirmed
+                } else if (s_followup && !s_wake_confirmed
                            && (n - pre >= WAKE_WORD_SPAN_FRAMES
                                || n - s_wake_last_loud >= WAKE_GAP_FRAMES)) {
                     s_wake_confirmed = true;
                 }
                 s_wake_last_loud = n;
             }
-            if (s_wake_confirmed && n - pre >= WAKE_MIN_FRAMES
-                && n - s_wake_last_loud >= WAKE_QUIET_FRAMES) {
+            if ((!s_followup || s_wake_confirmed) && n - pre >= WAKE_MIN_FRAMES
+                && n - s_wake_last_loud >= WAKE_QUESTION_QUIET_FRAMES) {
                 released = true;
                 stop_at = n + TAIL_FRAMES < MAX_FRAMES ? n + TAIL_FRAMES : MAX_FRAMES;
             } else if (!s_wake_heard
@@ -399,9 +397,9 @@ static bool record(bool barge_in, size_t *held, char *why, size_t cap)
                 s_wake_speechless = true;
                 released = true;
                 stop_at = n;
-            } else if (s_wake_heard && !s_wake_confirmed
-                       && n - pre >= (s_followup ? FOLLOWUP_GIVEUP_FRAMES : WAKE_QUESTION_GIVEUP_FRAMES)) {
-                /* The word, but no question followed. */
+            } else if (s_followup && s_wake_heard && !s_wake_confirmed
+                       && n - pre >= FOLLOWUP_GIVEUP_FRAMES) {
+                /* A follow-up listen that never grew into a question. */
                 s_wake_speechless = true;
                 released = true;
                 stop_at = n;
