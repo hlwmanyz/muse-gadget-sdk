@@ -181,8 +181,22 @@ class ChatViewTest(unittest.TestCase):
         board = read("components/muse/boards/board_muse_s3cam_diy.c")
         self.assertIn(".talk_hint = { LV_ALIGN_DEFAULT, 0, 0 }", board)
 
+    def test_wake_word_alone_never_sends_a_note(self):
+        # 21.5's regression: the word plus a one-second pause was sent on
+        # its own (chirp and all) and the question arrived inside the
+        # 0.12 s tail. The word only opens the turn; speech counts as
+        # the question once it runs past the word's span or restarts
+        # after a gap, and a word with no question behind it is dropped
+        # quietly at the question give-up.
+        voice = read("components/muse/muse_voice.c")
+        self.assertIn("s_wake_confirmed", voice)
+        self.assertIn("WAKE_WORD_SPAN_FRAMES", voice)
+        self.assertIn("WAKE_GAP_FRAMES", voice)
+        self.assertIn("WAKE_QUESTION_GIVEUP_FRAMES", voice)
+        self.assertIn("The word, but no question followed.", voice)
+
     def test_version(self):
-        self.assertIn('set(PROJECT_VER "21.6")', read("CMakeLists.txt"))
+        self.assertIn('set(PROJECT_VER "21.7")', read("CMakeLists.txt"))
 
 
 if __name__ == "__main__":
