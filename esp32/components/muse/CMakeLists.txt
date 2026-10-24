@@ -53,7 +53,7 @@ if(CONFIG_MUSE_ENABLED)
         list(APPEND srcs "fonts/muse_font_cjk_16.c")   # captions' CJK fallback
     endif()
     if(CONFIG_MUSE_CJK_FONT AND CONFIG_MUSE_CHAT_VIEW)
-        list(APPEND srcs "fonts/muse_font_cjk_20.c")   # the chat view's larger CJK (common-char subset)
+        list(APPEND srcs "fonts/muse_font_puhui_20.c")   # the chat view's font: PuHuiTi 20 (common-char subset)
     endif()
     if(CONFIG_MUSE_WAKEWORD)
         list(APPEND srcs "muse_wakenet.c")

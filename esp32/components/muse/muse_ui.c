@@ -513,7 +513,7 @@ static const lv_font_t *font_pick(const lv_font_t *full, const lv_font_t *compac
 LV_FONT_DECLARE(muse_font_cjk_16)
 #endif
 #if CONFIG_MUSE_CJK_FONT && CONFIG_MUSE_CHAT_VIEW
-LV_FONT_DECLARE(muse_font_cjk_20)
+LV_FONT_DECLARE(muse_font_puhui_20)
 #endif
 
 /* unscii-16 for captions and replies; with CONFIG_MUSE_CJK_FONT, a copy that
@@ -988,6 +988,11 @@ static void build_screen(void)
         lv_label_set_long_mode(s_caption_lbl, LV_LABEL_LONG_MODE_DOTS);
         /* Touch screens need the caption above the navigation dots too. */
         lv_obj_align(s_caption_lbl, LV_ALIGN_BOTTOM_MID, 0, (s_tall || s_tv) ? -30 : -3);
+#if CONFIG_MUSE_CHAT_VIEW
+        /* The chat view carries the conversation; the bottom caption band
+         * is one box too many under it. */
+        lv_obj_add_flag(s_caption_lbl, LV_OBJ_FLAG_HIDDEN);
+#endif
 #if CONFIG_MUSE_CJK_FONT
         /* CJK doesn't fit unscii-8's cell, so a reply with CJK in it fills the
          * band one line at a time in the 16 px caption font instead. */
@@ -1148,21 +1153,19 @@ static void update_control_hints(muse_mode_t mode)
 
 #define CHAT_LINGER_S 25.0f   /* the reply stays readable this long after a turn */
 
-/* The bubbles' font: a step up from the captions so a reply is easy to
- * read -- Montserrat 20 for Latin. With the CJK font on, its fallback is
- * a 20 px Unifont subset (GB2312 symbols + level-1 hanzi), which falls
- * back in turn to the full 16 px CJK font, so a rarer character still
- * renders, just at caption size. */
+/* The bubbles' font: Alibaba PuHuiTi at 20 px -- the typeface and size
+ * xiaozhi's chat uses, with even strokes and a little anti-aliasing --
+ * covering ASCII plus the everyday Chinese characters (GB2312 symbols +
+ * level-1 hanzi). Its fallback is the full 16 px CJK font, so a rarer
+ * character still renders, just at caption size. Without the CJK font,
+ * Montserrat 20 stands in (Latin only). */
 static const lv_font_t *chat_font(void)
 {
 #if CONFIG_MUSE_CJK_FONT
     static lv_font_t big;
-    static lv_font_t cjk;
-    if (!cjk.get_glyph_dsc) {
-        cjk = muse_font_cjk_20;
-        cjk.fallback = &muse_font_cjk_16;
-        big = lv_font_montserrat_20;
-        big.fallback = &cjk;
+    if (!big.get_glyph_dsc) {
+        big = muse_font_puhui_20;
+        big.fallback = &muse_font_cjk_16;
     }
     return &big;
 #else

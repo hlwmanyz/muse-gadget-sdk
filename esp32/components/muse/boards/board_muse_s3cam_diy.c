@@ -613,6 +613,7 @@ static const muse_board_t s_board = {
     .round = false,
     .touch = false,
     .diagonal_in = 2.0f,   /* approximate: the common 240x320 ST7789 module */
+    .avatar_px = 216,   /* fill the little square screen: the default 3/4-height face leaves it small */
     /* BOOT is the only button, so it also wakes the screen and the chip. */
     .talk_button = "boot",
     .aux_button = "boot",

@@ -106,11 +106,19 @@ class ChatViewTest(unittest.TestCase):
     def test_chat_font_is_a_step_up_with_the_full_font_behind_it(self):
         ui = read("components/muse/muse_ui.c")
         self.assertIn("chat_font()", ui)
-        self.assertIn("muse_font_cjk_20", ui)
+        # PuHuiTi 20, the typeface and size xiaozhi's chat uses.
+        self.assertIn("muse_font_puhui_20", ui)
         self.assertIn("lv_obj_set_style_text_font(lbl, chat_font(), 0)", ui)
         cmake = read("components/muse/CMakeLists.txt")
         self.assertIn('CONFIG_MUSE_CJK_FONT AND CONFIG_MUSE_CHAT_VIEW', cmake)
-        self.assertIn("fonts/muse_font_cjk_20.c", cmake)
+        self.assertIn("fonts/muse_font_puhui_20.c", cmake)
+
+    def test_no_bottom_caption_band_under_the_chat_view(self):
+        # On small screens the caption is a dark band across the bottom;
+        # with the chat view carrying the conversation it's one box too
+        # many, so the band is created hidden.
+        ui = read("components/muse/muse_ui.c")
+        self.assertIn("lv_obj_add_flag(s_caption_lbl, LV_OBJ_FLAG_HIDDEN)", ui)
 
     def test_chat_scrolls_by_measured_bottom_and_follows_speech(self):
         ui = read("components/muse/muse_ui.c")
@@ -122,9 +130,11 @@ class ChatViewTest(unittest.TestCase):
         # a 320-tall frame draws its bottom quarter off the glass.
         board = read("components/muse/boards/board_muse_s3cam_diy.c")
         self.assertIn("#define LCD_H 240", board)
+        # And the face fills the little square screen.
+        self.assertIn(".avatar_px = 216", board)
 
     def test_version(self):
-        self.assertIn('set(PROJECT_VER "21.3")', read("CMakeLists.txt"))
+        self.assertIn('set(PROJECT_VER "21.4")', read("CMakeLists.txt"))
 
 
 if __name__ == "__main__":
