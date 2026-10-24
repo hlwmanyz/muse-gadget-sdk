@@ -1241,6 +1241,7 @@ static void chat_sync(muse_mode_t mode, float now)
      * back up, so a long answer reads as a steady page-down, not a yo-yo
      * between where the walk had reached and a new bubble's top. */
     static int32_t follow_y = -1;
+    static int32_t anchor_y = -1;   /* the top of the reply being spoken */
     bool added = false;
     muse_chat_role_t last_role = MUSE_CHAT_ASSISTANT;
     while (s_chat_rendered < count) {
@@ -1251,6 +1252,7 @@ static void chat_sync(muse_mode_t mode, float now)
             s_chat_rendered = count > MUSE_CHAT_MAX ? count - MUSE_CHAT_MAX : 0;
             lv_obj_clean(s_chat_list);
             follow_y = -1;
+            anchor_y = -1;
             continue;
         }
         chat_add_bubble(role, text);
@@ -1269,8 +1271,10 @@ static void chat_sync(muse_mode_t mode, float now)
             int32_t bottom = lv_obj_get_scroll_bottom(s_chat_list);
             if (last_role == MUSE_CHAT_USER) {
                 follow_y = bottom;   /* the question, shown whole */
+                anchor_y = -1;
             } else if (follow_y < lv_obj_get_y(last)) {
                 follow_y = lv_obj_get_y(last);   /* the reply starts at its top */
+                anchor_y = follow_y;
             }
             if (follow_y > bottom) {
                 follow_y = bottom;
@@ -1280,22 +1284,42 @@ static void chat_sync(muse_mode_t mode, float now)
             }
         }
     }
-    /* Follow the speech one line at a time: each fresh caption page is
-     * another spoken line, so step a single text line down the reply. */
-    if (mode == MUSE_MODE_SPEAKING && follow_y >= 0) {
-        static uint32_t cap_ver;
-        static char cap[8];
-        if (muse_state_caption(cap, sizeof(cap), &cap_ver)) {
-            int32_t bottom = lv_obj_get_scroll_bottom(s_chat_list);
-            follow_y += lv_font_get_line_height(chat_font()) + 4;
-            if (follow_y > bottom) {
-                follow_y = bottom;
-            }
-            if (follow_y > lv_obj_get_scroll_y(s_chat_list)) {
-                lv_obj_scroll_to_y(s_chat_list, follow_y, LV_ANIM_OFF);
-            }
+    /* Follow the speech by its progress through the reply, mapped onto the
+     * bubble's scroll range. Counting caption lines can't track it: the
+     * caption splits on the caption band's width while the bubble wraps on
+     * the chat font's, so the two disagree by whole lines over a long
+     * message, and the estimated pace lags the real speech on top of that.
+     * The walk only ever moves down, so a jittery progress can't pull it back. */
+    if (mode == MUSE_MODE_SPEAKING && follow_y >= 0 && anchor_y >= 0) {
+        int32_t bottom = lv_obj_get_scroll_bottom(s_chat_list);
+        float p = muse_state_caption_progress();
+        if (p < 0.0f) {
+            p = 0.0f;
+        } else if (p > 1.0f) {
+            p = 1.0f;
+        }
+        int32_t target = anchor_y + (int32_t)(p * (bottom - anchor_y));
+        if (target > follow_y) {
+            follow_y = target;
+        }
+        if (follow_y > bottom) {
+            follow_y = bottom;
+        }
+        if (follow_y > lv_obj_get_scroll_y(s_chat_list)) {
+            lv_obj_scroll_to_y(s_chat_list, follow_y, LV_ANIM_OFF);
         }
     }
+    /* The reply finished: show its end. The estimated pace always leaves
+     * the walk a little short of the bottom, and once the mode leaves
+     * SPEAKING nothing would move it again, so it used to park mid-article. */
+    static bool was_speaking = false;
+    if (was_speaking && mode != MUSE_MODE_SPEAKING && s_chat_visible && follow_y >= 0) {
+        follow_y = lv_obj_get_scroll_bottom(s_chat_list);
+        if (follow_y > lv_obj_get_scroll_y(s_chat_list)) {
+            lv_obj_scroll_to_y(s_chat_list, follow_y, LV_ANIM_OFF);
+        }
+    }
+    was_speaking = (mode == MUSE_MODE_SPEAKING);
 }
 
 static void chat_build(lv_obj_t *scr)

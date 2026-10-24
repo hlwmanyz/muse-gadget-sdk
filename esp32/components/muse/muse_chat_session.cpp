@@ -2986,6 +2986,8 @@ extern "C" muse_hatch_ev_t muse_hatch_turn_event(char *text, size_t cap)
     return MUSE_HATCH_EV_NONE;
 }
 
+static float s_caption_progress;   /* fraction through the spoken message */
+
 extern "C" bool muse_hatch_turn_caption(size_t played, char *out, size_t cap)
 {
     /* The message being spoken: the last one whose speech has started. */
@@ -3000,6 +3002,7 @@ extern "C" bool muse_hatch_turn_caption(size_t played, char *out, size_t cap)
     }
     if (!m) {
         /* Nothing said yet: the reply's opening page, to read while the speech is on its way. */
+        s_caption_progress = 0.0f;
         for (int i = 0; i < s_turn.nmsgs && s_turn.texts; i++) {
             if (s_turn.msgs[i].len) {
                 return muse_hatch_caption_at(s_turn.texts + i * TEXT_MAX, 0, out, cap);
@@ -3013,8 +3016,21 @@ extern "C" bool muse_hatch_turn_caption(size_t played, char *out, size_t cap)
     if (at >= len) {
         at = len ? len - 1 : 0;
     }
+    /* How far through the spoken message the voice has got, as a fraction:
+     * the chat view maps it onto the bubble's scroll range so a long reply
+     * ends at its bottom instead of parking short. Counting caption lines
+     * can't do that: the caption splits on the caption band's width while
+     * the bubble wraps on the chat font's, so the two disagree by whole
+     * lines over a long message, and the estimated pace lags the real
+     * speech on top of that. */
+    s_caption_progress = len ? (float)at / (float)len : 0.0f;
 
     return muse_hatch_caption_at(text, at, out, cap);
+}
+
+extern "C" float muse_hatch_turn_caption_progress(void)
+{
+    return s_caption_progress;
 }
 
 extern "C" size_t muse_hatch_turn_read(int16_t *pcm, size_t frames, int wait_ms)

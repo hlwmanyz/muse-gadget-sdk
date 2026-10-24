@@ -111,12 +111,14 @@ static size_t s_wake_last_loud;   /* frame count at the last loud chunk */
 #define WAKE_LOUD_MARGIN_DB 12.0f   /* a chunk this far above the room's floor counts as speech */
 #define WAKE_LOUD_MIN_DB (-44.0f)   /* the adaptive loud line never sits below this... */
 #define WAKE_LOUD_MAX_DB (-36.0f)   /* ...nor above this */
+#define FOLLOWUP_AVG_MARGIN_DB 15.0f /* a follow-up listen counts as a question only if its sound so far averages this far above the room's floor */
+#define FOLLOWUP_AVG_MIN_DB (-40.0f) /* the average line never sits below this... */
+#define FOLLOWUP_AVG_MAX_DB (-30.0f) /* ...nor above this */
 #define WAKE_MIN_FRAMES (MUSE_AUDIO_RATE * 4 / 5)    /* 0.8 s in, before quiet may end it */
 #define WAKE_QUESTION_QUIET_FRAMES (MUSE_AUDIO_RATE * 5 / 2)   /* 2.5 s of quiet after speech ends the note */
 #define WAKE_GIVEUP_FRAMES (MUSE_AUDIO_RATE * 3)     /* 3 s with no speech at all */
 #define FOLLOWUP_GIVEUP_FRAMES (MUSE_AUDIO_RATE * 6)   /* a follow-up listen waits longer for its answer */
-#define WAKE_WORD_SPAN_FRAMES (MUSE_AUDIO_RATE * 6 / 5)   /* speech still going this far in is the question, not the word */
-#define WAKE_GAP_FRAMES (MUSE_AUDIO_RATE / 4)             /* a gap this long, then speech again, is the question starting */
+#define WAKE_WORD_SPAN_FRAMES (MUSE_AUDIO_RATE * 6 / 5)   /* a follow-up listen is only judged once this much of it has passed */
 #endif
 
 /*
@@ -366,8 +368,9 @@ static bool record(bool barge_in, size_t *held, char *why, size_t cap)
              * question, so neither can cut the recording off (the
              * 21.5 regression cut it one second after the word).
              * A follow-up listen is stricter: stray sounds must grow
-             * into a real question -- still going 1.2 s in, or
-             * restarting after a gap -- or the listen is dropped
+             * into a real question -- its sound so far must average
+             * well above the room's floor (see below), not merely
+             * burst above the line -- or the listen is dropped
              * quietly at its give-up instead of sending noise on
              * its own. */
             /* "Loud" is measured against the room, not an absolute line:
@@ -381,12 +384,31 @@ static bool record(bool barge_in, size_t *held, char *why, size_t cap)
             if (muse_audio_dbfs(s_chunk, MUSE_AUDIO_CHUNK) > loud_db) {
                 if (!s_wake_heard) {
                     s_wake_heard = true;
-                } else if (s_followup && !s_wake_confirmed
-                           && (n - pre >= WAKE_WORD_SPAN_FRAMES
-                               || n - s_wake_last_loud >= WAKE_GAP_FRAMES)) {
-                    s_wake_confirmed = true;
                 }
                 s_wake_last_loud = n;
+            }
+            /* Follow-up confirmation is a sustained average, never a peak:
+             * a single loud burst (a clap, a cough, one TV syllable) must
+             * not confirm on its own. Once 1.2 s of the listen has passed,
+             * the energy average over every chunk so far has to sit well
+             * above the room's floor. Real speech near the mic averages
+             * ~25 dB above the floor; room noise that only bursts above
+             * the line averages ~5 dB above it, so the two sit on opposite
+             * sides of the line with room to spare. A late question still
+             * confirms once ~0.5 s of loud speech has entered the average. */
+            if (s_followup && !s_wake_confirmed && n - pre >= WAKE_WORD_SPAN_FRAMES) {
+                float avg_db = st.frames ? 10.0f * log10f((float)(st.acc / st.frames / (32768.0 * 32768.0)) + 1e-10f) : -100.0f;
+                float avg_line = st.floor_db + FOLLOWUP_AVG_MARGIN_DB;
+                if (avg_line < FOLLOWUP_AVG_MIN_DB) {
+                    avg_line = FOLLOWUP_AVG_MIN_DB;
+                }
+                if (avg_line > FOLLOWUP_AVG_MAX_DB) {
+                    avg_line = FOLLOWUP_AVG_MAX_DB;
+                }
+                if (avg_db > avg_line) {
+                    s_wake_confirmed = true;
+                    ESP_LOGI(TAG, "follow-up confirmed: avg %.1f dBFS, floor %.1f dBFS", avg_db, st.floor_db);
+                }
             }
             if ((!s_followup || s_wake_confirmed) && n - pre >= WAKE_MIN_FRAMES
                 && n - s_wake_last_loud >= WAKE_QUESTION_QUIET_FRAMES) {
@@ -507,6 +529,7 @@ static bool hatch_reply(bool *delivered)
         /* The page being said, or before the speech the reply's opening page. */
         if ((speaking || replied) && muse_hatch_turn_caption(played, page, sizeof(page))) {
             muse_state_set_caption("%s", page);
+            muse_state_set_caption_progress(muse_hatch_turn_caption_progress());
         }
     }
     muse_state_set_level(0);

@@ -128,11 +128,17 @@ class ChatViewTest(unittest.TestCase):
         ui = read("components/muse/muse_ui.c")
         self.assertIn("lv_obj_get_scroll_bottom(s_chat_list)", ui)
         # The follow target only moves down: a question re-anchors at the
-        # bottom, a reply at its top, and the spoken walk steps one line.
+        # bottom, a reply at its top, and the spoken walk maps the
+        # caption's progress through the reply onto the bubble's scroll
+        # range. Counting caption lines used to park a long reply
+        # mid-article: the caption splits on the caption band's width
+        # while the bubble wraps on the chat font's.
         sync = ui[ui.index("static void chat_sync"):]
         sync = sync[:sync.index("static void chat_build")]
         self.assertIn("follow_y", sync)
-        self.assertIn("follow_y += lv_font_get_line_height(chat_font()) + 4", sync)
+        self.assertIn("anchor_y", sync)
+        self.assertIn("muse_state_caption_progress()", sync)
+        self.assertNotIn("follow_y += lv_font_get_line_height(chat_font()) + 4", sync)
         self.assertNotIn("scroll_to_view", sync)
         self.assertNotIn("* 3 / 4", sync)
 
@@ -194,17 +200,36 @@ class ChatViewTest(unittest.TestCase):
 
     def test_followup_listen_drops_speech_that_never_becomes_a_question(self):
         # A follow-up listen is stricter than a wake turn: stray sounds
-        # must grow into a real question (past the word's span, or
-        # restarting after a gap) or the listen is dropped quietly at
-        # its give-up instead of sending noise on its own.
+        # must grow into a real question or the listen is dropped quietly
+        # at its give-up instead of sending noise on its own.
         voice = read("components/muse/muse_voice.c")
         self.assertIn("s_wake_confirmed", voice)
         self.assertIn("WAKE_WORD_SPAN_FRAMES", voice)
-        self.assertIn("WAKE_GAP_FRAMES", voice)
         self.assertIn("A follow-up listen that never grew into a question.", voice)
 
+    def test_followup_confirmation_uses_sustained_average_not_peaks(self):
+        # A single loud burst (a clap, a cough, one TV syllable) used to
+        # confirm a follow-up on its own. Confirmation now needs the
+        # sound so far to average well above the room's floor: real
+        # speech near the mic averages ~25 dB above it, room noise that
+        # only bursts above the line ~5 dB above it.
+        voice = read("components/muse/muse_voice.c")
+        self.assertIn("FOLLOWUP_AVG_MARGIN_DB 15.0f", voice)
+        self.assertIn("FOLLOWUP_AVG_MIN_DB (-40.0f)", voice)
+        self.assertIn("FOLLOWUP_AVG_MAX_DB (-30.0f)", voice)
+        self.assertIn("st.floor_db + FOLLOWUP_AVG_MARGIN_DB", voice)
+        self.assertIn("follow-up confirmed: avg %.1f dBFS, floor %.1f dBFS", voice)
+        self.assertNotIn("WAKE_GAP_FRAMES", voice)
+        # And the walk's progress reaches the UI through the state layer.
+        session = read("components/muse/muse_chat_session.cpp")
+        self.assertIn("muse_hatch_turn_caption_progress", session)
+        self.assertIn("s_caption_progress", session)
+        state = read("components/muse/muse_state.c")
+        self.assertIn("muse_state_set_caption_progress", state)
+        self.assertIn("muse_state_caption_progress", state)
+
     def test_version(self):
-        self.assertIn('set(PROJECT_VER "21.8")', read("CMakeLists.txt"))
+        self.assertIn('set(PROJECT_VER "21.9")', read("CMakeLists.txt"))
 
 
 if __name__ == "__main__":

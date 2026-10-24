@@ -67,6 +67,11 @@ void muse_state_set_caption(const char *fmt, ...) __attribute__((format(printf, 
 /* Copies the caption if it changed since *version; returns true on change. */
 bool muse_state_caption(char *out, size_t out_len, uint32_t *version);
 
+/* Fraction through the spoken message the caption sits at, for the chat view's
+ * scroll walk. A plain live value, not versioned: the walk reads it every frame. */
+void muse_state_set_caption_progress(float progress);
+float muse_state_caption_progress(void);
+
 /* How much reply text the screen shows at once, set by the UI: lines of up to
  * `cols` characters. The replies are wrapped and paged to fit. A screen that
  * draws CJK larger than its other caption text sets a page for replies with CJK

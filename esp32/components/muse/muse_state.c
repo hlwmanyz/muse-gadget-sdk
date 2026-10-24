@@ -44,6 +44,7 @@ static volatile bool s_asleep;
 static portMUX_TYPE s_lock = portMUX_INITIALIZER_UNLOCKED;
 static char s_caption[MUSE_CAPTION_MAX];
 static uint32_t s_caption_version;
+static float s_caption_progress;
 static SemaphoreHandle_t s_format_lock;
 static EventGroupHandle_t s_wake;
 static volatile int s_page_cols = 16, s_page_lines = 2;
@@ -139,6 +140,16 @@ bool muse_state_caption(char *out, size_t out_len, uint32_t *version)
     }
     portEXIT_CRITICAL(&s_lock);
     return changed;
+}
+
+void muse_state_set_caption_progress(float progress)
+{
+    s_caption_progress = progress;
+}
+
+float muse_state_caption_progress(void)
+{
+    return s_caption_progress;
 }
 
 void muse_state_set_page(int cols, int lines)
