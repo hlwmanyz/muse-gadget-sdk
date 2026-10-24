@@ -124,7 +124,7 @@ class ChatViewTest(unittest.TestCase):
         self.assertIn("#define LCD_H 240", board)
 
     def test_version(self):
-        self.assertIn('set(PROJECT_VER "21.2")', read("CMakeLists.txt"))
+        self.assertIn('set(PROJECT_VER "21.3")', read("CMakeLists.txt"))
 
 
 if __name__ == "__main__":

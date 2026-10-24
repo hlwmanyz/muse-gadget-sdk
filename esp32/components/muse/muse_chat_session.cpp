@@ -1468,11 +1468,12 @@ static void on_event(cJSON *line)
         if (!text) {
             text = cJSON_GetStringValue(cJSON_GetObjectItem(payload, "content"));
         }
+        bool mine = !id || !s_turn.user_ids[0][0] || !strcmp(id, s_turn.user_ids[0]);
+        (void)mine;   /* only the chat-view post below reads it; that compiles out with the view */
         ESP_LOGI(TAG, "user row: id=%s text=%u bytes posted=%d", id ? id : "-",
                  text ? (unsigned)strlen(text) : 0, (int)s_turn.chat_posted);
 #if CONFIG_MUSE_CHAT_VIEW
-        if (text && text[0] && !s_turn.chat_posted &&
-            (!id || !s_turn.user_ids[0][0] || !strcmp(id, s_turn.user_ids[0]))) {
+        if (text && text[0] && !s_turn.chat_posted && mine) {
             char clean[1024];
             strlcpy(clean, text, sizeof(clean));
             char *suffix = strstr(clean, "\n[file:");
