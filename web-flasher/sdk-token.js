@@ -324,6 +324,105 @@ export async function gadgetHeap(port, { timeoutMs = 20000, retryMs = 2500 } = {
   return heard;
 }
 
+// Reads and sets the gadget's Wi-Fi network over the same console channel
+// as the speaker switch: ">wifi.ssid=", ">wifi.pass=" and ">wifi.connect"
+// are the setup commands the BLE path uses too (esp32/components/muse/
+// muse_ble.c), and the "@status" reply's "wifi" object confirms the
+// outcome — the page only ever shows what the gadget itself reports. The
+// status reply's "last" field names the most recent setup command, which
+// is how the page knows the join commands landed (a gadget restarted by
+// the port opening can miss the first send). The password goes to the
+// gadget only; the gadget never echoes it back.
+//
+// want: null to only read, or { ssid, pass } to join that network.
+// Resolves with the gadget's confirmed { state, ssid, ip }.
+export async function gadgetWifi(port, want, { timeoutMs = 45000, retryMs = 3000 } = {}) {
+  try {
+    await port.open({ baudRate: 115200 });
+  } catch (e) {
+    throw new Error(`Couldn't open the port (${e.message}). Close the installer's dialog first.`);
+  }
+  // Leave EN and BOOT alone on boards whose bridge drives them.
+  await port.setSignals({ dataTerminalReady: false, requestToSend: false }).catch(() => {});
+
+  const reader = port.readable.getReader();
+  let heard = null;   // last Wi-Fi state the gadget itself reported
+  let sent = false;   // the gadget's "last" confirms the join commands landed
+  const reading = (async () => {
+    const decoder = new TextDecoder();
+    let text = "";
+    for (;;) {
+      const { value, done } = await reader.read();
+      if (done) return;
+      text += decoder.decode(value, { stream: true });
+      let nl;
+      while ((nl = text.indexOf("\n")) >= 0) {
+        const line = text.slice(0, nl).replace(/\r$/, "");
+        text = text.slice(nl + 1);
+        if (!line.startsWith("@status ")) continue;
+        const m = line.match(/"wifi":\{"on":(?:true|false),"state":"([^"]*)","ssid":"((?:\\.|[^"\\])*)","ip":"([^"]*)"/);
+        if (m) heard = { state: m[1], ssid: m[2].replace(/\\(.)/g, "$1"), ip: m[3] };
+        if (line.includes('"last":"wifi.connect')) sent = true;
+      }
+    }
+  })().catch(() => {});
+
+  const write = async (s) => {
+    const writer = port.writable.getWriter();
+    try {
+      await writer.write(new TextEncoder().encode(s));
+    } finally {
+      writer.releaseLock();
+    }
+  };
+
+  const joined = () => Boolean(heard && want && heard.ssid === want.ssid && heard.state === "connected");
+
+  try {
+    const deadline = Date.now() + timeoutMs;
+    await sleep(1000);   // a gadget restarted by the port opening boots first
+    while (Date.now() < deadline) {
+      if (want && !sent) {
+        // wifi.ssid stages the name (and clears any staged password),
+        // wifi.pass stages the password, wifi.connect joins with both.
+        // Once "last" confirms they landed, don't send them again:
+        // a repeated wifi.connect would restart the join.
+        await write(`\n>wifi.ssid=${want.ssid}\n`);
+        await write(`\n>wifi.pass=${want.pass}\n`);
+        await write("\n>wifi.connect\n");
+      }
+      await write("\n>status\n");
+      const wait = Date.now() + retryMs;
+      while (Date.now() < wait) {
+        if (want ? joined() : heard !== null) break;
+        await sleep(100);
+      }
+      if (want ? joined() : heard !== null) break;
+    }
+  } finally {
+    await reader.cancel().catch(() => {});
+    await reading;
+    reader.releaseLock();
+    await port.close().catch(() => {});
+  }
+
+  if (heard === null) {
+    throw new Error(
+      "The gadget didn't answer. Check it runs firmware from this page and you picked its console port. " +
+        "If it still doesn't answer, unplug it, plug it back in and try again.",
+    );
+  }
+  if (!want) return heard;
+  if (joined()) return heard;
+  if (heard.ssid === want.ssid && heard.state === "failed") {
+    throw new Error("The gadget couldn't join that network — check the password and try again.");
+  }
+  if (heard.ssid === want.ssid && heard.state === "not_nearby") {
+    throw new Error("The gadget can't see that network — check the name, and that it is a 2.4 GHz network.");
+  }
+  throw new Error(`The gadget is still "${heard.state}" — give it a moment, then read the network again.`);
+}
+
 // Reads and sets the gadget's Edge TTS voice over the same console channel
 // as the speaker switch: ">tts.voice=<name>" writes it, and the "@status"
 // reply's "tts_voice" field confirms what the gadget stored — the page only
