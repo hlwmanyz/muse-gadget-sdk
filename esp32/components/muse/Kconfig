@@ -306,4 +306,50 @@ menu "Muse"
             (about 220 KB), which still covers a push-to-talk turn. Board
             overlays with 2 MB of PSRAM turn it on.
 
+    config MUSE_REALTIME_VOICE
+        bool "Live voice calls with Muse (experimental)"
+        depends on (MUSE_HATCH || HOMEHUB_VOICE) && SPIRAM
+        default n
+        help
+            A tap on the talk button starts a live voice call with Muse over
+            the voice session; the next press hangs up. Holding the button
+            still sends a voice note. The mic is shut while Muse is talking
+            unless the board's audio chip confirms echo cancellation, so you
+            take turns. The call also ends when Muse ends it, when nothing
+            has been said or played for the idle limit, or at the length
+            limit. Muse's VM has to accept voice calls from this gadget's
+            credentials.
+
+if MUSE_REALTIME_VOICE
+
+    config MUSE_REALTIME_VOICE_APP_ID
+        string "App ID the voice session connects as"
+        default "hatch-web"
+        help
+            Sent as app_id when the voice session connects, which is where
+            Muse's VM takes the app identity for every request on that
+            connection: calls, and voice notes and typed messages too (it
+            drops a per-request x-app-id). A call is refused without one. A
+            positive 64-bit app ID, or "hatch-web", the web app's. Empty
+            sends none. Builds without calls send none either.
+
+    config MUSE_REALTIME_VOICE_IDLE_S
+        int "Hang up after this many quiet seconds"
+        range 15 1800
+        default 45
+        help
+            Nothing said and nothing audible from Muse for this long ends
+            the call. The server may enforce a shorter idle limit.
+
+    config MUSE_REALTIME_VOICE_MAX_S
+        int "Longest call, in seconds"
+        range 60 7200
+        default 900
+
+    config MUSE_REALTIME_VOICE_GREETING
+        bool "Muse says hello when a call starts"
+        default n
+
+endif
+
 endmenu

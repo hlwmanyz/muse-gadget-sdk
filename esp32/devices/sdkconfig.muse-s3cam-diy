@@ -29,6 +29,10 @@ CONFIG_SR_WN_WN9_NIHAOXIAOXIN_TTS=y
 # WeChat-style bubble view for voice turns.
 CONFIG_MUSE_CJK_FONT=y
 CONFIG_MUSE_CHAT_VIEW=y
+# Live voice calls (upstream MUSE_REALTIME_VOICE): a tap on the BOOT talk
+# button starts a call, the next press hangs up; holding still sends a
+# voice note. Half-duplex turn-taking (no AEC hardware on this board).
+CONFIG_MUSE_REALTIME_VOICE=y
 
 # The LCD uses GPIO19/20, the chip's native USB pins, so the console and the
 # serial log go out the CH340 TTL port (UART0) instead of USB Serial/JTAG.
