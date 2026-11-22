@@ -993,7 +993,7 @@ static void build_screen(void)
      * unless the screen is tall enough to fit it in small type above Muse. */
     s_state_lbl = make_label(face, s_small ? &lv_font_unscii_8 : &lv_font_unscii_16, 0xffffff);
     lv_obj_set_style_text_letter_space(s_state_lbl, s_small ? 1 : 2, 0);
-    lv_obj_align(s_state_lbl, LV_ALIGN_TOP_MID, 0, muse_board->rim_controls ? 64 : s_small ? 22 : 40 + s_dy);
+    lv_obj_align(s_state_lbl, LV_ALIGN_TOP_MID, 0, muse_board->rim_controls ? 64 : s_small ? 3 : 40 + s_dy);
     lv_obj_set_flag(s_state_lbl, LV_OBJ_FLAG_HIDDEN, s_small && !s_tall && s_h < 200);
 
     if (s_small) {
@@ -1007,11 +1007,11 @@ static void build_screen(void)
         lv_obj_set_flex_flow(status, LV_FLEX_FLOW_ROW);
         lv_obj_set_flex_align(status, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
         lv_obj_set_style_pad_column(status, 4, 0);
-        lv_obj_align(status, LV_ALIGN_TOP_LEFT, 4, muse_board->rim_controls ? 64 : 22);
+        lv_obj_align(status, LV_ALIGN_TOP_LEFT, 4, muse_board->rim_controls ? 64 : 3);
         s_ble_icon = make_label(status, &lv_font_montserrat_14, COLOR_DIM);
         s_power_lbl = make_label(status, &lv_font_unscii_8, COLOR_DIM);
         s_wifi_icon = make_label(face, &lv_font_montserrat_14, COLOR_DIM);
-        lv_obj_align(s_wifi_icon, LV_ALIGN_TOP_RIGHT, -4, muse_board->rim_controls ? 64 : 22);
+        lv_obj_align(s_wifi_icon, LV_ALIGN_TOP_RIGHT, -6, muse_board->rim_controls ? 64 : 3);
     } else {
         /* The Wi-Fi icon rides the state line, at its right end, instead of
          * taking a row of its own above it: one top row, more room below. */
