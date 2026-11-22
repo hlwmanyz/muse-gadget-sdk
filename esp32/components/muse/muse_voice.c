@@ -1255,6 +1255,7 @@ static void run_call(bool ptt, size_t waking_chunks)
         if (!atomic_load(&s_shutdown)) go_idle("INPUT LOST - PRESS AGAIN");
         return;
     }
+    muse_state_set_call_active(true);   /* the chat view stays down until the call ends */
     muse_state_set_level(0);
     muse_state_set_progress(0);
     muse_state_set_caption("CONNECTING TO MUSE...");
@@ -1312,6 +1313,7 @@ static void run_call(bool ptt, size_t waking_chunks)
             static char chat_text[384];
             bool is_user;
             while (muse_voice_call_take_transcript(&is_user, chat_text, sizeof(chat_text))) {
+                ESP_LOGI(TAG, "call transcript (%s): %s", is_user ? "user" : "Muse", chat_text);
                 muse_state_chat_post(is_user ? MUSE_CHAT_USER : MUSE_CHAT_ASSISTANT, chat_text);
             }
         }
@@ -1399,6 +1401,7 @@ static void run_call(bool ptt, size_t waking_chunks)
     muse_state_set_level(0);
     s_monitor_db = -100.0f;
     if (!atomic_load(&s_shutdown)) go_idle(ended && text[0] ? text : "CALL ENDED");
+    muse_state_set_call_active(false);
     atomic_store(&s_call_view, MUSE_VOICE_VIEW_NONE);
     atomic_store(&s_ptt_call, false);
 }

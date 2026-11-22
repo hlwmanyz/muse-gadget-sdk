@@ -35,6 +35,7 @@
 
 static volatile muse_mode_t s_mode = MUSE_MODE_BOOT;
 static volatile int64_t s_mode_since_us;
+static volatile bool s_call_active;
 static volatile float s_level;
 static volatile float s_progress;
 static volatile int64_t s_last_poke_us;
@@ -88,6 +89,16 @@ muse_mode_t muse_state_mode(float *secs_in_mode)
         *secs_in_mode = secs_since(s_mode_since_us);
     }
     return s_mode;
+}
+
+void muse_state_set_call_active(bool on)
+{
+    s_call_active = on;
+}
+
+bool muse_state_call_active(void)
+{
+    return s_call_active;
 }
 
 void muse_state_set_level(float level)

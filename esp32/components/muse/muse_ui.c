@@ -1251,7 +1251,10 @@ static void chat_sync(muse_mode_t mode, float now)
         s_chat_until = now + CHAT_LINGER_S;
     }
     uint32_t count = muse_state_chat_count();
-    bool want = s_face_active && (in_turn || (count && now <= s_chat_until));
+    /* A call drives the same modes as a note turn, but its screen is the
+     * call face: the chat view only comes up for notes, or once a call has
+     * ended and its transcripts land in the log. */
+    bool want = s_face_active && !muse_state_call_active() && (in_turn || (count && now <= s_chat_until));
     if (want && !s_chat_visible) {
         s_chat_visible = true;
         lv_obj_remove_flag(s_chat, LV_OBJ_FLAG_HIDDEN);

@@ -52,6 +52,12 @@ void muse_state_init(void);
 void muse_state_set_mode(muse_mode_t mode);
 muse_mode_t muse_state_mode(float *secs_in_mode);
 
+/* A realtime call is on: the call drives the same LISTENING/SPEAKING modes
+ * as a note turn, so the UI tells them apart with this -- during a call the
+ * screen stays on the call face, and the chat view waits until it ends. */
+void muse_state_set_call_active(bool on);
+bool muse_state_call_active(void);
+
 /* Live audio level (mic while listening, playback while speaking), 0..1. */
 void muse_state_set_level(float level);
 float muse_state_level(void);
