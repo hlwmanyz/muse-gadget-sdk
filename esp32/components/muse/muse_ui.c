@@ -529,16 +529,22 @@ LV_FONT_DECLARE(muse_font_puhui_20)
 LV_FONT_DECLARE(muse_font_emoji_16)
 #endif
 
-/* unscii-16 for captions and replies; with CONFIG_MUSE_CJK_FONT, a copy that
- * falls back to Unifont's 16x16 CJK, the same cell, for what unscii lacks.
- * With CONFIG_MUSE_EMOJI, the last fallback is the emoji, 16 px images two
- * cells wide. */
+/* PuHui 20 for captions and replies -- the same even-stroked font the chat
+ * bubbles use; the 16 px bitmap fonts it replaces drew uneven strokes.
+ * With CONFIG_MUSE_CJK_FONT, a copy of Unifont's 16x16 CJK falls behind it
+ * for the rarer characters PuHui lacks. With CONFIG_MUSE_EMOJI, the last
+ * fallback is the emoji, 16 px images two cells wide. Without PuHui,
+ * unscii-16 heads the same chain. */
 static const lv_font_t *caption_font(void)
 {
 #if CONFIG_MUSE_CJK_FONT || CONFIG_MUSE_EMOJI
     static lv_font_t font;
     if (!font.get_glyph_dsc) {
+#if CONFIG_MUSE_CJK_FONT && CONFIG_MUSE_CHAT_VIEW
+        font = muse_font_puhui_20;
+#else
         font = lv_font_unscii_16;
+#endif
 #if CONFIG_MUSE_CJK_FONT
         static lv_font_t cjk;   /* a copy of the CJK font, so its fallback can be the emoji */
         cjk = muse_font_cjk_16;
@@ -939,7 +945,7 @@ static void build_screen(void)
      * whose blank bottom rows can tuck in behind the meter.
      */
     int ring_in = (s_w < s_h ? s_w : s_h) / 2 - 10;   /* the ring's inner edge */
-    int cap_h = 2 * lv_font_get_line_height(&lv_font_unscii_16) + CAPTION_LINE_SPACE;
+    int cap_h = 2 * lv_font_get_line_height(caption_font()) + CAPTION_LINE_SPACE;
     int cap_bottom = 179;                              /* a 466 px circle's; fine for rectangles */
     if (muse_board->round) {
         cap_bottom = (int)sqrtf((float)(ring_in * ring_in - CAPTION_W * CAPTION_W / 4)) - 3;
