@@ -58,6 +58,11 @@ static const char *TAG = "muse_ui";
 #define RING_RANGE 1000
 #define CAPTION_W 256           /* 16 columns of unscii_16, the width reply captions wrap to */
 #define CAPTION_LINE_SPACE 2
+#define CAPTION_FONT_SLACK 6   /* extra box height under the last line: PuHui's
+                                * glyphs sit lower in their line than the bitmap
+                                * fonts' did, and an exact-fit box shaves their
+                                * bottoms. Boxes anchor from the bottom, so the
+                                * slack grows them upwards. */
 #define ART_BLANK_ROWS 3        /* Muse's art never reaches the grid's bottom rows */
 #define MINI_CELL_PX 2          /* Muse's grid cells over a reply that's read */
 #define ANSWER_MS 300           /* Muse making room for a reply, and back */
@@ -741,7 +746,7 @@ static void set_reply_box(answer_layout_t *l, int cols, int lines, int top, int 
     l->cols = cols;
     l->lines = lines;
     l->w = cols * cw;
-    l->h = lines * pitch - CAPTION_LINE_SPACE;
+    l->h = lines * pitch - CAPTION_LINE_SPACE + CAPTION_FONT_SLACK;
     l->top = top;
 }
 
@@ -945,7 +950,7 @@ static void build_screen(void)
      * whose blank bottom rows can tuck in behind the meter.
      */
     int ring_in = (s_w < s_h ? s_w : s_h) / 2 - 10;   /* the ring's inner edge */
-    int cap_h = 2 * lv_font_get_line_height(caption_font()) + CAPTION_LINE_SPACE;
+    int cap_h = 2 * lv_font_get_line_height(caption_font()) + CAPTION_LINE_SPACE + CAPTION_FONT_SLACK;
     int cap_bottom = 179;                              /* a 466 px circle's; fine for rectangles */
     if (muse_board->round) {
         cap_bottom = (int)sqrtf((float)(ring_in * ring_in - CAPTION_W * CAPTION_W / 4)) - 3;
@@ -978,9 +983,10 @@ static void build_screen(void)
     lv_obj_set_flex_align(status, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
     lv_obj_set_style_pad_column(status, s_small ? 4 : 8, 0);
     lv_obj_align(status, LV_ALIGN_TOP_MID, 0, muse_board->rim_controls ? 40 : s_small ? 1 : 20 + s_dy);
-    s_wifi_icon = make_label(status, &lv_font_montserrat_14, COLOR_DIM);
     s_ble_icon = make_label(status, &lv_font_montserrat_14, COLOR_DIM);
     s_power_lbl = make_label(status, &lv_font_unscii_8, COLOR_DIM);
+    /* The Wi-Fi icon sits at the right end of the status row. */
+    s_wifi_icon = make_label(status, &lv_font_montserrat_14, COLOR_DIM);
 
     /* The compact layout leaves the state to the avatar and the caption,
      * unless the screen is tall enough to fit it in small type above Muse. */
