@@ -29,7 +29,7 @@ concurrency:
 jobs:
   tests:
     name: Tests (${{ matrix.name }})
-        continue-on-error: ${{ matrix.name == 'oldest' }}
+    continue-on-error: ${{ matrix.name == 'oldest' }}
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
