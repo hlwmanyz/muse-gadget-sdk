@@ -148,7 +148,7 @@ class ChatViewTest(unittest.TestCase):
         board = read("components/muse/boards/board_muse_s3cam_diy.c")
         self.assertIn("#define LCD_H 240", board)
         # And the face fills the little square screen.
-        self.assertIn(".avatar_px = 216", board)
+        self.assertIn(".avatar_px = 240", board)
 
     def test_note_bubble_marks_the_turn_with_its_duration(self):
         # The note transcript never returns to the device (the subscribe
@@ -229,7 +229,7 @@ class ChatViewTest(unittest.TestCase):
         self.assertIn("muse_state_caption_progress", state)
 
     def test_version(self):
-        self.assertIn('set(PROJECT_VER "22.7")', read("CMakeLists.txt"))
+        self.assertIn('set(PROJECT_VER "22.8")', read("CMakeLists.txt"))
 
 
 if __name__ == "__main__":

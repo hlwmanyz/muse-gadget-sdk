@@ -985,8 +985,6 @@ static void build_screen(void)
     lv_obj_align(status, LV_ALIGN_TOP_MID, 0, muse_board->rim_controls ? 40 : s_small ? 1 : 20 + s_dy);
     s_ble_icon = make_label(status, &lv_font_montserrat_14, COLOR_DIM);
     s_power_lbl = make_label(status, &lv_font_unscii_8, COLOR_DIM);
-    /* The Wi-Fi icon sits at the right end of the status row. */
-    s_wifi_icon = make_label(status, &lv_font_montserrat_14, COLOR_DIM);
 
     /* The compact layout leaves the state to the avatar and the caption,
      * unless the screen is tall enough to fit it in small type above Muse. */
@@ -994,6 +992,11 @@ static void build_screen(void)
     lv_obj_set_style_text_letter_space(s_state_lbl, s_small ? 1 : 2, 0);
     lv_obj_align(s_state_lbl, LV_ALIGN_TOP_MID, 0, muse_board->rim_controls ? 64 : s_small ? 22 : 40 + s_dy);
     lv_obj_set_flag(s_state_lbl, LV_OBJ_FLAG_HIDDEN, s_small && !s_tall && s_h < 200);
+
+    /* The Wi-Fi icon rides the state line, at its right end, instead of
+     * taking a row of its own above it: one top row, more room below. */
+    s_wifi_icon = make_label(face, &lv_font_montserrat_14, COLOR_DIM);
+    lv_obj_align(s_wifi_icon, LV_ALIGN_TOP_RIGHT, -6, muse_board->rim_controls ? 64 : s_small ? 22 : 40 + s_dy);
 
     /* This gadget's own name, dim under the state while it's unpaired: with
      * more than one on the bench, the screen says which one to pick in the
@@ -1022,8 +1025,15 @@ static void build_screen(void)
 #endif
     if (s_small) {
         /* Two lines over the bottom of the face, on a dark band so they stay
-         * legible. A tall screen has room to keep them above the mic icon. */
+         * legible. A tall screen has room to keep them above the mic icon.
+         * With the CJK font the band fits one line of the caption font
+         * instead: CJK captions switch to it per frame, and a band sized
+         * for unscii-8 shaves the glyphs' bottoms. */
+#if CONFIG_MUSE_CJK_FONT
+        lv_obj_set_size(s_caption_lbl, s_w, lv_font_get_line_height(caption_font()) + 6);
+#else
         lv_obj_set_size(s_caption_lbl, s_w, 2 * 8 + 2 + 4);
+#endif
         lv_obj_set_style_pad_ver(s_caption_lbl, 2, 0);
         lv_obj_set_style_text_line_space(s_caption_lbl, 2, 0);
         lv_obj_set_style_bg_color(s_caption_lbl, lv_color_black(), 0);
