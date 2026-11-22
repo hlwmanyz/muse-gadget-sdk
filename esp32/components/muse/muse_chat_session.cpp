@@ -80,6 +80,9 @@ extern "C" {
 #if CONFIG_MUSE_REALTIME_VOICE
 #include "muse_voice_call_priv.h"
 #endif
+#if CONFIG_MUSE_RESEND_NOTES
+#include "muse_resend.h"
+#endif
 #include "muse_link.h"
 #include "muse_settings.h"
 #include "muse_wifi.h"
@@ -163,6 +166,9 @@ struct ev_t {
     muse_hatch_ev_t type;
     uint32_t gen;
     char text[EV_TEXT];
+#if CONFIG_MUSE_RESEND_NOTES
+    muse_chat_fail_t fail;   /* MUSE_HATCH_EV_ERROR: what it means for the note */
+#endif
 };
 
 static QueueHandle_t s_cmds, s_events;
@@ -247,6 +253,10 @@ struct turn_t {
     size_t note_len;
     size_t pcm_bytes;        /* the note so far */
     size_t body_sent;
+#if CONFIG_MUSE_RESEND_NOTES
+    bool note_up;            /* the note's last body chunk went out */
+    int note_status;         /* the note request's HTTP status, 0 before one */
+#endif
     char *texts;             /* MAX_MSGS * TEXT_MAX: each message's text */
     uint32_t pcm_out;        /* reply audio frames handed to the voice task */
     char committed[512];     /* finals that arrived before the half-close */
@@ -335,6 +345,11 @@ static void emit(muse_hatch_ev_t type, const char *text)
     } else if (text) {
         strlcpy(ev.text, text, sizeof(ev.text));
     }
+#if CONFIG_MUSE_RESEND_NOTES
+    if (type == MUSE_HATCH_EV_ERROR) {
+        ev.fail = muse_resend_failure(s_turn.note_status, s_turn.note_up);
+    }
+#endif
     /* Captions are lossy; the end of a turn, and whether the note got there, must get through. */
     TickType_t wait = (type == MUSE_HATCH_EV_DONE || type == MUSE_HATCH_EV_ERROR || type == MUSE_HATCH_EV_SENT)
                           ? pdMS_TO_TICKS(200)
@@ -842,6 +857,51 @@ static bool open_subscription(void)
     return s_conn.sub_id != 0;
 }
 
+#if CONFIG_ESP_TLS_CLIENT_SESSION_TICKETS
+/* TLS session resumption for the voice session's WebSocket, as Link's own
+ * (main/noise_control.cpp, CONFIG_ESP_TLS_CLIENT_SESSION_TICKETS): a
+ * reconnect offers the last session, and an edge that kept it resumes (no
+ * certificate chain, no ECDHE); one it doesn't resume falls back to a full
+ * handshake, verified against the same CA bundle. Kept per host.
+ * Session-task-owned. */
+static esp_tls_client_session_t *s_tls_session;
+static char *s_tls_session_host;
+
+static void tls_resume_forget(void)
+{
+    if (s_tls_session) {
+        esp_tls_free_client_session(s_tls_session);
+    }
+    free(s_tls_session_host);
+    s_tls_session = nullptr;
+    s_tls_session_host = nullptr;
+}
+
+static void tls_resume_offer(esp_tls_cfg_t &cfg)
+{
+    if (s_tls_session && (!s_tls_session_host || strcmp(s_tls_session_host, s_host) != 0)) {
+        tls_resume_forget();
+    }
+    cfg.client_session = s_tls_session;
+}
+
+static void tls_resume_keep(esp_tls_t *tls)
+{
+    esp_tls_client_session_t *fresh = esp_tls_get_client_session(tls);
+    char *copy = fresh ? strdup(s_host) : nullptr;
+    if (!copy) {
+        if (fresh) {
+            esp_tls_free_client_session(fresh);
+        }
+        tls_resume_forget();
+        return;
+    }
+    tls_resume_forget();
+    s_tls_session = fresh;
+    s_tls_session_host = copy;
+}
+#endif
+
 static bool connect_once(char *err, size_t err_cap, int *http_status)
 {
     *http_status = 0;
@@ -852,13 +912,24 @@ static bool connect_once(char *err, size_t err_cap, int *http_status)
         return false;
     }
     esp_tls_cfg_t cfg = {};
-    cfg.crt_bundle_attach = esp_crt_bundle_attach;
+    cfg.crt_bundle_attach = esp_crt_bundle_attach;   // a fallback full handshake verifies as always
     cfg.timeout_ms = 15000;
+#if CONFIG_ESP_TLS_CLIENT_SESSION_TICKETS
+    tls_resume_offer(cfg);
+#endif
     int64_t t0 = now_us();
     if (esp_tls_conn_new_sync(s_host, strlen(s_host), NOISE_PORT, &cfg, c.tls) != 1) {
         snprintf(err, err_cap, "Can't reach %s", s_host);
+#if CONFIG_ESP_TLS_CLIENT_SESSION_TICKETS
+        tls_resume_forget();   // never retry with a session that may be what failed
+#endif
         return false;
     }
+#if CONFIG_ESP_TLS_CLIENT_SESSION_TICKETS
+    ESP_LOGI(TAG, "TLS in %lld ms%s", (long long)((now_us() - t0) / 1000),
+             cfg.client_session ? ", last session offered" : "");
+    tls_resume_keep(c.tls);
+#endif
     int status = ws_upgrade(c.tls, s_vm.vm_id, s_vm.vm_token);
     *http_status = status;
     if (status != 101) {
@@ -1192,6 +1263,9 @@ static bool record_note(void)
     if (!send_note_part(true)) {
         return false;
     }
+#if CONFIG_MUSE_RESEND_NOTES
+    s_turn.note_up = true;   /* from here Muse may have it, ack or not */
+#endif
     ESP_LOGI(TAG, "voice note: %.2fs, %u byte request", secs, (unsigned)s_turn.body_sent);
 #if CONFIG_MUSE_CHAT_VIEW
     /* A note's transcript never comes back to the device, so the user's
@@ -1885,6 +1959,9 @@ static bool stream_end(stream_t *s, bool ok)
         close_stream(s);
         s_turn.chat_id = 0;
         if (!ok) {
+#if CONFIG_MUSE_RESEND_NOTES
+            s_turn.note_status = s->status;
+#endif
             turn_fail("MUSE DIDN'T TAKE IT");
         }
         break;
@@ -2243,8 +2320,20 @@ extern "C" bool muse_hatch_ready(void)
     return s_cmds && muse_hatch_configured() && muse_wifi_connected();
 }
 
+#if CONFIG_MUSE_RESEND_NOTES
+static muse_chat_fail_t s_last_fail;   /* voice task: muse_chat_turn_failure() */
+
+extern "C" muse_chat_fail_t muse_chat_turn_failure(void)
+{
+    return s_last_fail;
+}
+#endif
+
 extern "C" void muse_hatch_turn_begin(void)
 {
+#if CONFIG_MUSE_RESEND_NOTES
+    s_last_fail = MUSE_CHAT_FAIL_NONE;
+#endif
     uint32_t gen = ++s_gen;
     xStreamBufferReset(s_in);
     drain_out();
@@ -2351,6 +2440,11 @@ extern "C" muse_hatch_ev_t muse_hatch_turn_event(char *text, size_t cap)
     while (xQueueReceive(s_events, &ev, 0) == pdTRUE) {
         if (ev.gen == s_gen.load()) {
             strlcpy(text, ev.text, cap);
+#if CONFIG_MUSE_RESEND_NOTES
+            if (ev.type == MUSE_HATCH_EV_ERROR) {
+                s_last_fail = ev.fail;
+            }
+#endif
             return ev.type;
         }
     }

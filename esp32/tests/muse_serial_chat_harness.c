@@ -21,7 +21,9 @@
  *   caption C  stdin is a reply's text: prints it wrapped to C columns, as the
  *              screen pages it (test_muse_caption_wrap.py)
  *   ascii      stdin is a reply's text: prints it with the ASCII stand-ins the
- *              caption shows (muse_text.c, test_muse_caption_wrap.py) */
+ *              caption shows (muse_text.c, test_muse_caption_wrap.py)
+ *   markdown   stdin is a reply's text: prints it without its Markdown
+ *              (test_muse_markdown_captions.py) */
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -101,8 +103,14 @@ int main(int argc, char **argv)
         strlcpy(shown, in, sizeof(shown));
         muse_text_to_ascii(shown, sizeof(shown));
         fputs(shown, stdout);
+    } else if (argc > 1 && !strcmp(argv[1], "markdown")) {
+        size_t n = muse_text_strip_markdown(in, 0);
+        if (n != strlen(in)) {
+            return 3;
+        }
+        fputs(in, stdout);
     } else {
-        fprintf(stderr, "usage: %s console|unescape|caption COLS|ascii < input\n", argv[0]);
+        fprintf(stderr, "usage: %s console|unescape|caption COLS|ascii|markdown < input\n", argv[0]);
         return 2;
     }
     free(in);

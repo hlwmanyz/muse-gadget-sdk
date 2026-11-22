@@ -48,6 +48,9 @@ if(CONFIG_MUSE_ENABLED)
         if(CONFIG_MUSE_REALTIME_VOICE)
             list(APPEND srcs "muse_voice_call.cpp" "muse_voice_call_core.c")
         endif()
+        if(CONFIG_MUSE_RESEND_NOTES)
+            list(APPEND srcs "muse_resend.c")   # when a note that didn't send goes again
+        endif()
     else()
         list(APPEND srcs "muse_chat_link.c")   # text replies over Link's session
     endif()

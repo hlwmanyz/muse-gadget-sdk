@@ -142,6 +142,14 @@ CONFIG_HOMEHUB_PAIRING_EFUSE_AUTH=n
 CONFIG_MBEDTLS_HARDWARE_ECDSA_SIGN=y
 CONFIG_MBEDTLS_ECDSA_DETERMINISTIC=y
 
+# Resume the VM WebSocket's last TLS session on a reconnect (Link's control
+# session, main/noise_control.cpp, and Muse's voice session): the edge
+# resumes TLS 1.2 sessions by id, which skips the certificate chain and the
+# ECDHE. A session costs a few hundred bytes (no peer certificate kept:
+# MBEDTLS_SSL_KEEP_PEER_CERTIFICATE stays off); a fallback full handshake
+# verifies against the CA bundle as always.
+CONFIG_ESP_TLS_CLIENT_SESSION_TICKETS=y
+
 # Main task stack (TLS handshake is hungry).
 CONFIG_ESP_MAIN_TASK_STACK_SIZE=8192
 

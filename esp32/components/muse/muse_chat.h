@@ -116,6 +116,21 @@ size_t muse_hatch_turn_read(int16_t *pcm, size_t frames, int wait_ms);
 /* Bench test: decodes a built-in MP3 to 16 kHz; caller frees *pcm. Returns frames. */
 size_t muse_hatch_mp3_selftest(int16_t **pcm);
 
+/* What a voice note's failed turn means for the note (CONFIG_MUSE_RESEND_NOTES). */
+typedef enum {
+    MUSE_CHAT_FAIL_NONE,      /* no failure reported */
+    MUSE_CHAT_FAIL_RETRY,     /* Muse never had all of it: worth sending again */
+    MUSE_CHAT_FAIL_REFUSED,   /* Muse answered that it won't take it */
+    MUSE_CHAT_FAIL_UNKNOWN,   /* all of it went up, unacknowledged: Muse may have it */
+} muse_chat_fail_t;
+
+/*
+ * The failure that the last MUSE_HATCH_EV_ERROR muse_hatch_turn_event()
+ * returned since muse_hatch_turn_begin() reported, or MUSE_CHAT_FAIL_NONE
+ * (CONFIG_MUSE_RESEND_NOTES only). Voice task only.
+ */
+muse_chat_fail_t muse_chat_turn_failure(void);
+
 /*
  * As muse_hatch_turn_audio, for a note recorded before the turn began: takes
  * what fits of it, waiting up to wait_ms for room if not all of it does, and

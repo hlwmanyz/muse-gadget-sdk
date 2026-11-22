@@ -145,12 +145,22 @@ static bool next_line(const char **text, int cols, const char **start, size_t *l
     return end != p;
 }
 
+/* Whether the wrapped line at `start` begins a line of `text`, rather than
+ * carrying on the one before (muse_text_strip_markdown's `wrapped`). */
+static bool starts_line(const char *text, const char *start)
+{
+    while (start > text && start[-1] == ' ') {
+        start--;
+    }
+    return start == text || start[-1] == '\n';
+}
+
 /*
  * Wraps `text` to the screen's page (muse_state_page) and puts the page holding
  * byte `at` in `out`. Pages overlap by a line: a page's last line starts the
  * next one, so the page turns as that line is reached and nothing is skipped.
  */
-bool muse_hatch_caption_at(const char *text, size_t at, char *out, size_t cap)
+static bool caption_at(const char *text, size_t at, char *out, size_t cap, uint64_t *wrapped)
 {
     int cols, lines;
     muse_state_page(muse_text_has_cjk(text), &cols, &lines);
@@ -170,6 +180,7 @@ bool muse_hatch_caption_at(const char *text, size_t at, char *out, size_t cap)
 
     size_t o = 0;
     out[0] = '\0';
+    *wrapped = 0;
     p = text;
     for (n = 0; n < first + lines && next_line(&p, cols, &start, &len); n++) {
         if (n < first) {
@@ -179,11 +190,26 @@ bool muse_hatch_caption_at(const char *text, size_t at, char *out, size_t cap)
             break;   /* whole lines only */
         }
         o += snprintf(out + o, cap - o, "%s%.*s", o ? "\n" : "", (int)len, start);
+        if (n - first < 64 && !starts_line(text, start)) {
+            *wrapped |= 1ull << (n - first);
+        }
     }
     return true;
 }
 
 /* ---- Typed turns on the serial console ---- */
+/* The page is wrapped from the reply as Muse sent it, so `at` and the page
+ * turns stay in step with the speech; only the page shown loses its Markdown. */
+bool muse_hatch_caption_at(const char *text, size_t at, char *out, size_t cap)
+{
+    uint64_t wrapped = 0;
+    bool found = caption_at(text, at, out, cap, &wrapped);
+    if (cap) {
+        muse_text_strip_markdown(out, wrapped);
+    }
+    return found;
+}
+
 
 /* JSON-escapes whole characters of *src into out, up to cap - 1 bytes; moves *src past them. */
 static size_t escape_some(const char **src, char *out, size_t cap)
