@@ -98,8 +98,8 @@ void muse_hatch_tail_words(const char *src, char *out, size_t cap)
 
 /*
  * The next line of `text` wrapped to `cols` characters as the caption shows
- * them (an ellipsis as three dots, muse_text.h), splitting only words longer
- * than a line. CJK has no spaces: it breaks between characters, but never
+ * them (an ellipsis as three dots, muse_text.h, an emoji as two), splitting
+ * only words longer than a line. CJK has no spaces: it breaks between characters, but never
  * before closing punctuation.
  */
 static bool next_line(const char **text, int cols, const char **start, size_t *len)
@@ -114,8 +114,15 @@ static bool next_line(const char **text, int cols, const char **start, size_t *l
     while (*end && *end != '\n') {
         size_t bytes;
         char shown[4];
+#if CONFIG_MUSE_EMOJI
+        /* An emoji the caption keeps is itself, two of the caption font's cells wide. */
+        bool emoji = muse_text_emoji(end, &bytes);
+        int shows = emoji ? -1 : muse_text_ascii(end, &bytes, shown);
+        int w = emoji ? 2 : shows < 0 ? 1 : shows;
+#else
         int w = muse_text_ascii(end, &bytes, shown);
         w = w < 0 ? 1 : w;
+#endif
         muse_text_cjk_t cjk = muse_text_cjk(end);
         bool cjk_break = n && cjk != MUSE_TEXT_CJK_CLOSE && (cjk || prev);
         if (n + w > cols && n) {

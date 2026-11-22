@@ -340,3 +340,8 @@ their upstream licenses:
 
 ESP-IDF components fetched at build time (into `managed_components/`) are
 under their own licenses.
+- [`components/muse/fonts/muse_font_emoji_16.c`](components/muse/fonts/muse_font_emoji_16.c),
+  the captions' emoji (`CONFIG_MUSE_EMOJI`), are 190 Twemoji v16.0.1 graphics
+  by Twitter, Inc, jdecked and other contributors, scaled to 16 px: CC-BY 4.0.
+  See [`components/muse/fonts/LICENSE-twemoji.txt`](components/muse/fonts/LICENSE-twemoji.txt)
+  and its README.

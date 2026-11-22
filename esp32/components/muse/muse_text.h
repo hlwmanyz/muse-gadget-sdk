@@ -30,6 +30,7 @@ extern "C" {
  * ASCII stand-ins for what they lack: curly quotes become straight ones, an em
  * dash "--", accented letters their plain ones. Emoji go; anything else stays,
  * and with CONFIG_MUSE_CJK_FONT the captions draw CJK from a fallback font.
+ * With CONFIG_MUSE_EMOJI, captions keep the emoji their emoji font has.
  */
 
 /* The stand-in for the UTF-8 character at s into out, and its length (0 drops
@@ -53,6 +54,22 @@ bool muse_text_has_cjk(const char *s);
 /* Puts the stand-ins into s, which has room for cap bytes. If one doesn't fit,
  * the text ends there. */
 void muse_text_to_ascii(char *s, size_t cap);
+
+/* The caption has a font for emoji (CONFIG_MUSE_EMOJI, on screens whose
+ * captions use the 16 px caption font): from now on muse_text_to_caption()
+ * keeps the ones it has, without their style, skin tone or anything joined to
+ * them with U+200D. Other emoji still go. */
+void muse_text_keep_emoji(void);
+
+/* Whether the UTF-8 character at s is an emoji a caption keeps; *len is its
+ * length in bytes. CONFIG_MUSE_EMOJI only. */
+bool muse_text_emoji(const char *s, size_t *len);
+
+/* muse_text_to_ascii() for a caption, which may keep emoji. */
+void muse_text_to_caption(char *s, size_t cap);
+
+/* muse_text_to_ascii() for text in fonts without emoji, such as the menu's. */
+void muse_text_to_label(char *s, size_t cap);
 
 /* text, or if it needs stand-ins and fits in cap bytes, a copy with them in buf. */
 const char *muse_text_showable(const char *text, char *buf, size_t cap);

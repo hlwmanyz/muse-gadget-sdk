@@ -78,3 +78,4 @@ components (into `esp32/managed_components/`), and the simulator's LVGL and
 SDL (listed in [`esp32/simulator/THIRD_PARTY.md`](esp32/simulator/THIRD_PARTY.md)).
 
 The Apache License does not cover the [Jollybot avatar](esp32/avatar).
+| [`esp32/components/muse/fonts/muse_font_emoji_16.c`](esp32/components/muse/fonts/muse_font_emoji_16.c) | [Twemoji](https://github.com/jdecked/twemoji) v16.0.1 graphics, 190 of them scaled to 16 px (see [`README.md`](esp32/components/muse/fonts/README.md)) | CC-BY 4.0, see [`LICENSE-twemoji.txt`](esp32/components/muse/fonts/LICENSE-twemoji.txt) |

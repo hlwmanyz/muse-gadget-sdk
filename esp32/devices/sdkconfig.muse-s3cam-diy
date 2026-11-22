@@ -37,6 +37,10 @@ CONFIG_MUSE_REALTIME_VOICE=y
 # a note that didn't land waits in PSRAM and goes again; one Muse refused,
 # or that went up whole without an ack, is dropped instead of repeated.
 CONFIG_MUSE_RESEND_NOTES=y
+# Show emoji in captions and replies (upstream MUSE_EMOJI): this board's
+# captions use the 16 px caption font, so the Twemoji fallback draws the
+# common ones in colour; the rest still drop, as before.
+CONFIG_MUSE_EMOJI=y
 
 # The LCD uses GPIO19/20, the chip's native USB pins, so the console and the
 # serial log go out the CH340 TTL port (UART0) instead of USB Serial/JTAG.

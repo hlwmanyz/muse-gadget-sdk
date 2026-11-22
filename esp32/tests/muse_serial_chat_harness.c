@@ -23,7 +23,10 @@
  *   ascii      stdin is a reply's text: prints it with the ASCII stand-ins the
  *              caption shows (muse_text.c, test_muse_caption_wrap.py)
  *   markdown   stdin is a reply's text: prints it without its Markdown
- *              (test_muse_markdown_captions.py) */
+ *              (test_muse_markdown_captions.py)
+ *   emoji      built with CONFIG_MUSE_EMOJI: stdin is a reply's text: prints
+ *              the caption muse_text_to_caption() makes of it, with the emoji
+ *              the emoji font has kept (test_muse_emoji.py) */
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -92,6 +95,9 @@ int main(int argc, char **argv)
         }
     } else if (argc > 2 && !strcmp(argv[1], "caption")) {
         /* One page tall enough for the whole reply: every wrapped line. */
+#if CONFIG_MUSE_EMOJI
+        muse_text_keep_emoji();   /* emoji count two columns, as on screen */
+#endif
         s_cols = atoi(argv[2]);
         s_lines = 1000;
         static char page[1 << 16];
@@ -109,8 +115,16 @@ int main(int argc, char **argv)
             return 3;
         }
         fputs(in, stdout);
+#if CONFIG_MUSE_EMOJI
+    } else if (argc > 1 && !strcmp(argv[1], "emoji")) {
+        static char shown[1 << 16];
+        strlcpy(shown, in, sizeof(shown));
+        muse_text_keep_emoji();
+        muse_text_to_caption(shown, sizeof(shown));
+        fputs(shown, stdout);
+#endif
     } else {
-        fprintf(stderr, "usage: %s console|unescape|caption COLS|ascii|markdown < input\n", argv[0]);
+        fprintf(stderr, "usage: %s console|unescape|caption COLS|ascii|markdown|emoji < input\n", argv[0]);
         return 2;
     }
     free(in);

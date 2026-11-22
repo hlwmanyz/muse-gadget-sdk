@@ -16,9 +16,17 @@
 
 #include "muse_text.h"
 
+#ifdef ESP_PLATFORM
+#include "sdkconfig.h"
+#endif
+
 #include <stdbool.h>
 #include <stdint.h>
 #include <string.h>
+
+#if CONFIG_MUSE_EMOJI
+#include "fonts/muse_emoji.h"
+#endif
 
 /* Punctuation and symbols, and the letters that take two, by code point. */
 static const struct {
@@ -138,6 +146,10 @@ static const char VIETNAMESE[] =
     "AaAaAaAaAaAaAaAaAaAaAaAaEeEeEeEeEeEeEeEeIiIiOoOoOoOoOoOoOoOoOoOoOoOo"
     "UuUuUuUuUuUuUuYyYyYyYy";
 
+#if CONFIG_MUSE_EMOJI
+static bool s_keep_emoji;   /* muse_text_keep_emoji() */
+#endif
+
 /* The code point at s, and its length in *len; -1 if it's broken. */
 static int32_t decode(const unsigned char *s, size_t *len)
 {
@@ -243,12 +255,75 @@ bool muse_text_has_cjk(const char *s)
     return false;
 }
 
-void muse_text_to_ascii(char *s, size_t cap)
+#if CONFIG_MUSE_EMOJI
+/* The emoji the caption font draws (fonts/muse_font_emoji_16.c). */
+static bool emoji(int32_t cp)
+{
+    static const uint32_t CODES[] = { MUSE_EMOJI_CODE_POINTS };
+    size_t lo = 0, hi = sizeof(CODES) / sizeof(CODES[0]);
+    while (lo < hi) {
+        size_t mid = (lo + hi) / 2;
+        if (CODES[mid] == (uint32_t)cp) {
+            return true;
+        }
+        if (CODES[mid] < (uint32_t)cp) {
+            lo = mid + 1;
+        } else {
+            hi = mid;
+        }
+    }
+    return false;
+}
+
+void muse_text_keep_emoji(void)
+{
+    s_keep_emoji = true;
+}
+
+bool muse_text_emoji(const char *s, size_t *len)
+{
+    int32_t cp = decode((const unsigned char *)s, len);
+    return s_keep_emoji && cp > 0 && emoji(cp);
+}
+
+/* Drops what follows the emoji ending at p as part of it: its style and skin
+ * tone, and anything joined to it with U+200D, so a sequence shows as its
+ * first emoji. n is the text's length; returns the new one. */
+static size_t drop_joined(char *p, size_t n, const char *s)
+{
+    for (;;) {
+        size_t len, next = 0;
+        int32_t cp = decode((const unsigned char *)p, &len);
+        if (cp == 0x200D && p[len]) {
+            decode((const unsigned char *)p + len, &next);   /* and the character it joins */
+        } else if (cp != 0xFE0E && cp != 0xFE0F && !(cp >= 0x1F3FB && cp <= 0x1F3FF)) {
+            return n;
+        }
+        size_t cut = len + next;
+        memmove(p, p + cut, n - (p - s) - cut + 1);
+        n -= cut;
+    }
+}
+#endif
+
+static void fold(char *s, size_t cap, bool keep_emoji)
 {
     size_t n = strlen(s);
+#if CONFIG_MUSE_EMOJI
+    keep_emoji = keep_emoji && s_keep_emoji;
+#else
+    (void)keep_emoji;
+#endif
     for (char *p = s; *p;) {
         size_t len;
         char a[4];
+#if CONFIG_MUSE_EMOJI
+        if (keep_emoji && muse_text_emoji(p, &len)) {
+            p += len;
+            n = drop_joined(p, n, s);
+            continue;
+        }
+#endif
         int alen = muse_text_ascii(p, &len, a);
         if (alen < 0) {
             p += len;
@@ -262,7 +337,27 @@ void muse_text_to_ascii(char *s, size_t cap)
         memcpy(p, a, alen);
         n = n - len + alen;
         p += alen;
+#if CONFIG_MUSE_EMOJI
+        if (keep_emoji && !alen) {
+            n = drop_joined(p, n, s);   /* an emoji the font lacks takes its sequence with it */
+        }
+#endif
     }
+}
+
+void muse_text_to_ascii(char *s, size_t cap)
+{
+    fold(s, cap, false);
+}
+
+void muse_text_to_caption(char *s, size_t cap)
+{
+    fold(s, cap, true);
+}
+
+void muse_text_to_label(char *s, size_t cap)
+{
+    fold(s, cap, false);
 }
 
 const char *muse_text_showable(const char *text, char *buf, size_t cap)

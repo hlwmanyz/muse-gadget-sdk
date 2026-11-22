@@ -58,6 +58,9 @@ if(CONFIG_MUSE_ENABLED)
     if(CONFIG_MUSE_CJK_FONT)
         list(APPEND srcs "fonts/muse_font_cjk_16.c")   # captions' CJK fallback
     endif()
+    if(CONFIG_MUSE_EMOJI)
+        list(APPEND srcs "fonts/muse_font_emoji_16.c")   # captions' emoji
+    endif()
     if(CONFIG_MUSE_CJK_FONT AND CONFIG_MUSE_CHAT_VIEW)
         list(APPEND srcs "fonts/muse_font_puhui_20.c")   # the chat view's font: PuHuiTi 20 (common-char subset)
     endif()
