@@ -941,7 +941,7 @@ static bool send_held(bool asleep)
              h->tries + 1);
     muse_hatch_turn_begin();
     size_t sent = 0;
-    feed_t fed = feed_rest(h->pcm, h->frames, &sent, true, false);
+    feed_t fed = feed_rest(h->pcm, h->frames, &sent, true);
     muse_hatch_ev_t landed = fed == FED ? wait_landed() : MUSE_HATCH_EV_NONE;
     if (landed == MUSE_HATCH_EV_NONE) {
         muse_hatch_turn_cancel();
