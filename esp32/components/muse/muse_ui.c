@@ -975,16 +975,19 @@ static void build_screen(void)
     build_button_icons(face);
 
     /* Status line: connectivity icons + power. */
-    lv_obj_t *status = lv_obj_create(face);
-    lv_obj_remove_style_all(status);
-    lv_obj_remove_flag(status, LV_OBJ_FLAG_SCROLLABLE);
-    lv_obj_set_size(status, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
-    lv_obj_set_flex_flow(status, LV_FLEX_FLOW_ROW);
-    lv_obj_set_flex_align(status, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
-    lv_obj_set_style_pad_column(status, s_small ? 4 : 8, 0);
-    lv_obj_align(status, LV_ALIGN_TOP_MID, 0, muse_board->rim_controls ? 40 : s_small ? 1 : 20 + s_dy);
-    s_ble_icon = make_label(status, &lv_font_montserrat_14, COLOR_DIM);
-    s_power_lbl = make_label(status, &lv_font_unscii_8, COLOR_DIM);
+    lv_obj_t *status = NULL;
+    if (!s_small) {
+        status = lv_obj_create(face);
+        lv_obj_remove_style_all(status);
+        lv_obj_remove_flag(status, LV_OBJ_FLAG_SCROLLABLE);
+        lv_obj_set_size(status, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
+        lv_obj_set_flex_flow(status, LV_FLEX_FLOW_ROW);
+        lv_obj_set_flex_align(status, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+        lv_obj_set_style_pad_column(status, 8, 0);
+        lv_obj_align(status, LV_ALIGN_TOP_MID, 0, muse_board->rim_controls ? 40 : 20 + s_dy);
+        s_ble_icon = make_label(status, &lv_font_montserrat_14, COLOR_DIM);
+        s_power_lbl = make_label(status, &lv_font_unscii_8, COLOR_DIM);
+    }
 
     /* The compact layout leaves the state to the avatar and the caption,
      * unless the screen is tall enough to fit it in small type above Muse. */
@@ -993,10 +996,28 @@ static void build_screen(void)
     lv_obj_align(s_state_lbl, LV_ALIGN_TOP_MID, 0, muse_board->rim_controls ? 64 : s_small ? 22 : 40 + s_dy);
     lv_obj_set_flag(s_state_lbl, LV_OBJ_FLAG_HIDDEN, s_small && !s_tall && s_h < 200);
 
-    /* The Wi-Fi icon rides the state line, at its right end, instead of
-     * taking a row of its own above it: one top row, more room below. */
-    s_wifi_icon = make_label(face, &lv_font_montserrat_14, COLOR_DIM);
-    lv_obj_align(s_wifi_icon, LV_ALIGN_TOP_RIGHT, -6, muse_board->rim_controls ? 64 : s_small ? 22 : 40 + s_dy);
+    if (s_small) {
+        /* A small screen splits its symbols across the state line: Bluetooth
+         * and power at the left end, Wi-Fi at the right, and the state text
+         * centred between them with the middle to itself. */
+        status = lv_obj_create(face);
+        lv_obj_remove_style_all(status);
+        lv_obj_remove_flag(status, LV_OBJ_FLAG_SCROLLABLE);
+        lv_obj_set_size(status, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
+        lv_obj_set_flex_flow(status, LV_FLEX_FLOW_ROW);
+        lv_obj_set_flex_align(status, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+        lv_obj_set_style_pad_column(status, 4, 0);
+        lv_obj_align(status, LV_ALIGN_TOP_LEFT, 4, muse_board->rim_controls ? 64 : 22);
+        s_ble_icon = make_label(status, &lv_font_montserrat_14, COLOR_DIM);
+        s_power_lbl = make_label(status, &lv_font_unscii_8, COLOR_DIM);
+        s_wifi_icon = make_label(face, &lv_font_montserrat_14, COLOR_DIM);
+        lv_obj_align(s_wifi_icon, LV_ALIGN_TOP_RIGHT, -4, muse_board->rim_controls ? 64 : 22);
+    } else {
+        /* The Wi-Fi icon rides the state line, at its right end, instead of
+         * taking a row of its own above it: one top row, more room below. */
+        s_wifi_icon = make_label(face, &lv_font_montserrat_14, COLOR_DIM);
+        lv_obj_align(s_wifi_icon, LV_ALIGN_TOP_RIGHT, -6, muse_board->rim_controls ? 64 : 40 + s_dy);
+    }
 
     /* This gadget's own name, dim under the state while it's unpaired: with
      * more than one on the bench, the screen says which one to pick in the
