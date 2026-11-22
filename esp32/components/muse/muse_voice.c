@@ -52,10 +52,7 @@ static const char *TAG = "muse_voice";
 #define TAIL_FRAMES (MUSE_AUDIO_RATE * 12 / 100)   /* capture lag + poll interval, stops before the release click */
 #define MAX_FRAMES (MUSE_AUDIO_RATE * MAX_SECS)
 #define MIN_HELD_FRAMES (MUSE_AUDIO_RATE * 3 / 10)   /* a speechless press shorter than this is a bump, not a note */
-#define LONG_PRESS_FRAMES (MUSE_AUDIO_RATE * 3 / 2)   /* 1.5 s held in silence: a call, not a note */
-#define PRESS_LOUD_MARGIN_DB 12.0f   /* a chunk this far above the room's floor counts as speech */
-#define PRESS_LOUD_MIN_DB (-44.0f)   /* the press speech line never sits below this... */
-#define PRESS_LOUD_MAX_DB (-36.0f)   /* ...nor above this */
+#define CALL_MAX_FRAMES (MUSE_AUDIO_RATE * 1)   /* a press of a second or less is a call; longer is a note -- time only, sound is never judged */
 #if CONFIG_MUSE_BOARD_M5STACK_CARDPUTER_ADV || CONFIG_MUSE_BOARD_AI_PASSPORT
 #define PRE_CHUNKS 6                                   /* 120 ms; a 320 ms upload burst stalls on the ADV and C3 */
 #else
@@ -83,8 +80,7 @@ static QueueHandle_t s_queue;
 static uint32_t s_press_input_epoch;
 static uint32_t s_press_mark;   /* the press's pending-call mark (muse_input_clear_call_pending) */
 static bool s_btn_press;        /* this record() is a plain button press: not the wake word, not a follow-up */
-static bool s_press_speech;     /* record() heard speech in this press (set by record, read by the task) */
-static bool s_long_press;       /* record() stopped early: the press was held in silence past LONG_PRESS_FRAMES */
+static long s_press_frames;     /* frames from press to release, stamped by record() at PTT_UP; -1 while still held */
 static volatile bool s_monitor;
 static volatile float s_monitor_db = -100.0f;
 static volatile bool s_chirp;
@@ -367,22 +363,33 @@ static void take(rec_stats_t *st, const int16_t *pcm)
  */
 static bool record(bool barge_in, size_t *held, char *why, size_t cap)
 {
-    muse_state_set_mode(MUSE_MODE_LISTENING);
-    muse_state_set_progress(0);
+    /* A button press paints nothing yet: released within a second it is
+     * a call and the call screen is the first thing shown; held past a
+     * second it is a note, and only then does the conversation screen
+     * take over (ui_on, in the loop). Wake-word and follow-up listens
+     * are conversations from the start and paint at once. Streaming
+     * begins immediately either way; a call-bound press has its turn
+     * cancelled by the voice task, as before. */
+    bool ui_on = !s_btn_press;
+    if (ui_on) {
+        muse_state_set_mode(MUSE_MODE_LISTENING);
+        muse_state_set_progress(0);
+    }
     s_rec_n = s_sent = 0;
     s_live = s_tried = false;
     if (!s_rec || (muse_hatch_ready() && !s_held_count)) {
         go_live();
     }
-    muse_state_set_caption(s_live ? "LISTENING..." : "RECORDING...");
+    if (ui_on) {
+        muse_state_set_caption(s_live ? "LISTENING..." : "RECORDING...");
+    }
 #if CONFIG_MUSE_WAKEWORD
     s_wake_heard = false;
     s_wake_speechless = false;
     s_wake_confirmed = false;
     s_wake_last_loud = 0;
 #endif
-    s_press_speech = false;
-    s_long_press = false;
+    s_press_frames = -1;
     bool heard = false, ok = true;
     bool gave_up = false;   /* Hatch failed this note: it's kept, and goes later */
     char text[96];
@@ -435,23 +442,16 @@ static bool record(bool barge_in, size_t *held, char *why, size_t cap)
             ESP_LOGI(TAG, "Muse in reach: streaming the note so far");
             go_live();
         }
-        muse_state_set_progress((float)n / MAX_FRAMES);
-        if (!heard && ok && tick) {
-            muse_state_set_caption("%s %.1fs", s_live ? "LISTENING" : "RECORDING", (double)n / MUSE_AUDIO_RATE);
+        if (!ui_on && n - pre > CALL_MAX_FRAMES) {
+            /* Held past a second: a note after all -- the conversation
+             * screen takes over from here. */
+            ui_on = true;
+            muse_state_set_mode(MUSE_MODE_LISTENING);
         }
-        /* A button press that hears speech is a note, however long it
-         * runs; one held in silence is on its way to being a call (below).
-         * "Speech" is measured against the room, not an absolute line:
-         * this recording's own floor plus headroom, clamped -- the same
-         * recipe as the wake word's loud line. The floor comes mostly
-         * from the pre-roll, so a first word right on the press still
-         * lands well above it. */
-        if (s_btn_press && !s_press_speech) {
-            float loud_db = st.floor_db + PRESS_LOUD_MARGIN_DB;
-            if (loud_db < PRESS_LOUD_MIN_DB) loud_db = PRESS_LOUD_MIN_DB;
-            if (loud_db > PRESS_LOUD_MAX_DB) loud_db = PRESS_LOUD_MAX_DB;
-            if (muse_audio_dbfs(s_chunk, MUSE_AUDIO_CHUNK) > loud_db) {
-                s_press_speech = true;
+        if (ui_on) {
+            muse_state_set_progress((float)n / MAX_FRAMES);
+            if (!heard && ok && tick) {
+                muse_state_set_caption("%s %.1fs", s_live ? "LISTENING" : "RECORDING", (double)n / MUSE_AUDIO_RATE);
             }
         }
         /*
@@ -528,21 +528,10 @@ static bool record(bool barge_in, size_t *held, char *why, size_t cap)
         }
 #endif
         if (!released && got_event(MUSE_PTT_UP)) {
+            s_press_frames = (long)(n - pre);
             released = true;
             stop_at = n + TAIL_FRAMES < MAX_FRAMES ? n + TAIL_FRAMES : MAX_FRAMES;
         }
-#if CONFIG_MUSE_REALTIME_VOICE
-        if (s_btn_press && !released && !s_press_speech
-            && n - pre >= LONG_PRESS_FRAMES) {
-            /* Held in silence past 1.5 s: the press means a call, not a
-             * note. Stop here with nothing sent; the voice task drops the
-             * recording and runs the call. A press that heard speech never
-             * lands here, so talking is never cut off mid-sentence. */
-            s_long_press = true;
-            released = true;
-            stop_at = n;
-        }
-#endif
     }
     muse_state_set_level(0);
     *held = n - pre;
@@ -1454,14 +1443,16 @@ static void voice_task(void *arg)
             voice_wake = false;
 #endif
 #if CONFIG_MUSE_REALTIME_VOICE
-            if (s_long_press) {
-                /* Held in silence past 1.5 s: the press meant a hands-free
-                 * call, not a note. The recording is dropped, never sent.
-                 * (Local gesture rule, the reverse of upstream's tap: here
-                 * the short press is the note and the long silent hold is
-                 * the call. Turns that began with the wake word, and
-                 * follow-up listens, never convert -- record() only flags
-                 * plain button presses.) */
+            if (s_btn_press && s_press_frames >= 0
+                && s_press_frames <= (long)CALL_MAX_FRAMES) {
+                /* A press of a second or less means a call, not a note:
+                 * the recording is dropped, never sent; a longer press is
+                 * a note. The rule is time only -- whether anything was
+                 * said is never judged, because room noise made that
+                 * judgment unreliable (a silent 2.2 s hold was once read
+                 * as speech off a -33 dBFS noise spike). Turns that began
+                 * with the wake word, and follow-up listens, are not
+                 * button presses and never land here. */
                 muse_hatch_turn_cancel();
                 drop_rec();
                 pre_reset();
@@ -1475,7 +1466,7 @@ static void voice_task(void *arg)
                 break;
             }
 #endif
-            if (held < MIN_HELD_FRAMES && !s_press_speech && !wake && !voice_wake) {
+            if (held < MIN_HELD_FRAMES && !wake && !voice_wake) {
                 /* A speechless bump, not a note: nothing was said, so there
                  * is nothing to send. */
                 muse_hatch_turn_cancel();
