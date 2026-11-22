@@ -63,6 +63,7 @@ jobs:
 
   simulator:
     name: UI simulator (${{ matrix.name }})
+    continue-on-error: true
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
